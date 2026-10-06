@@ -38,6 +38,6 @@ export {
   useLeaveRequests,
   useCurrentStaff,
 } from "./useStaff";
-export { useDashboard } from "./useDashboard";
+export { useDashboard, type DashboardDateRange } from "./useDashboard";
 export { useUsers, useUser } from "./useUsers";
 export { useReplenishmentRequests } from "./useReplenishment";

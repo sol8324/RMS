@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import dynamic from "next/dynamic";
 import {
   PageHeader,
@@ -19,8 +20,15 @@ import {
   RecentActivity,
 } from "@/features/dashboard";
 import { Button } from "@/components/ui/button";
-import { RefreshCw, LayoutDashboard } from "lucide-react";
-import { useDashboard } from "@/lib/hooks";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Calendar, RefreshCw, LayoutDashboard } from "lucide-react";
+import { useDashboard, type DashboardDateRange } from "@/lib/hooks";
 import { useAuth } from "@/providers/AuthProvider";
 import {
   DemandForecastCard,
@@ -46,7 +54,11 @@ const TopSellingItems = dynamic(
 export default function DashboardPage() {
   const { user } = useAuth();
   const role = user?.role ?? "waiter";
-  const { data, isLoading, error, refetch } = useDashboard();
+  const [dateRange, setDateRange] = useState<DashboardDateRange>({
+    date_from: new Date(Date.now() - 6 * 24 * 60 * 60 * 1000).toISOString().split("T")[0],
+    date_to: new Date().toISOString().split("T")[0],
+  });
+  const { data, isLoading, error, refetch } = useDashboard(dateRange);
 
   if (isLoading) {
     return (
@@ -201,10 +213,38 @@ export default function DashboardPage() {
         title="Dashboard"
         description="Overview of your restaurant"
         action={
-          <Button variant="outline" size="sm" onClick={() => refetch()}>
-            <RefreshCw className="h-4 w-4 mr-1.5" />
-            Refresh
-          </Button>
+          <div className="flex items-center gap-2">
+            <Select
+              value={`${dateRange.date_from || ""} to ${dateRange.date_to || ""}`}
+              onValueChange={(val) => {
+                if (!val) return;
+                const [from, to] = val.split(" to ");
+                setDateRange({ date_from: from, date_to: to });
+              }}
+            >
+              <SelectTrigger className="w-[280px]">
+                <SelectValue placeholder="Select date range" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={`${new Date(Date.now() - 6 * 24 * 60 * 60 * 1000).toISOString().split("T")[0]} to ${new Date().toISOString().split("T")[0]}`}>
+                  Last 7 days (default)
+                </SelectItem>
+                <SelectItem value={`${new Date().toISOString().split("T")[0]} to ${new Date().toISOString().split("T")[0]}`}>
+                  Today
+                </SelectItem>
+                <SelectItem value={`${new Date(Date.now() - 29 * 24 * 60 * 60 * 1000).toISOString().split("T")[0]} to ${new Date().toISOString().split("T")[0]}`}>
+                  Last 30 days
+                </SelectItem>
+                <SelectItem value={`${new Date(Date.now() - 89 * 24 * 60 * 60 * 1000).toISOString().split("T")[0]} to ${new Date().toISOString().split("T")[0]}`}>
+                  Last 90 days
+                </SelectItem>
+              </SelectContent>
+            </Select>
+            <Button variant="outline" size="sm" onClick={() => refetch()}>
+              <RefreshCw className="h-4 w-4 mr-1.5" />
+              Refresh
+            </Button>
+          </div>
         }
       />
 

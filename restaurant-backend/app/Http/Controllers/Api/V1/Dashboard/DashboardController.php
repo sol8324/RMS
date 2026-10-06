@@ -24,23 +24,26 @@ class DashboardController extends Controller
 {
     public function summary(Request $request): JsonResponse
     {
+        // Date range support: default to last 7 days, allow custom range
+        $dateFrom = $request->input('date_from', now()->subDays(6)->startOfDay());
+        $dateTo = $request->input('date_to', now()->endOfDay());
+
         $today = now()->startOfDay();
         $yesterday = now()->subDay()->startOfDay();
         $weekStart = now()->startOfWeek();
         $monthStart = now()->startOfMonth();
 
-        $todayOrders = Order::where('created_at', '>=', $today)->count();
-        $todayRevenue = Order::where('created_at', '>=', $today)
+        $todayOrders = Order::whereBetween('created_at', [$dateFrom, $dateTo])->count();
+        $todayRevenue = Order::whereBetween('created_at', [$dateFrom, $dateTo])
             ->where('status', 'completed')
             ->sum('total');
-        $yesterdayRevenue = Order::where('created_at', '>=', $yesterday)
-            ->where('created_at', '<', $today)
+        $yesterdayRevenue = Order::whereBetween('created_at', [$yesterday, $today])
             ->where('status', 'completed')
             ->sum('total');
-        $weekRevenue = Order::where('created_at', '>=', $weekStart)
+        $weekRevenue = Order::whereBetween('created_at', [$weekStart, $dateTo])
             ->where('status', 'completed')
             ->sum('total');
-        $monthRevenue = Order::where('created_at', '>=', $monthStart)
+        $monthRevenue = Order::whereBetween('created_at', [$monthStart, $dateTo])
             ->where('status', 'completed')
             ->sum('total');
 
@@ -48,7 +51,7 @@ class DashboardController extends Controller
             ? round((($todayRevenue - $yesterdayRevenue) / $yesterdayRevenue) * 100, 1)
             : 0;
 
-        $dailyBreakdown = Order::where('created_at', '>=', now()->subDays(7))
+        $dailyBreakdown = Order::whereBetween('created_at', [$dateFrom, $dateTo])
             ->where('status', 'completed')
             ->selectRaw("date(created_at) as date, sum(total) as amount")
             ->groupBy('date')
@@ -62,7 +65,7 @@ class DashboardController extends Controller
         $transactionCount = $todayOrders;
         $averageTicket = $transactionCount > 0 ? round((float) $todayRevenue / $transactionCount, 2) : 0;
 
-        $salesByType = Order::whereDate('created_at', $today)
+        $salesByType = Order::whereBetween('created_at', [$dateFrom, $dateTo])
             ->selectRaw("order_type, count(*) as count, sum(total) as revenue")
             ->groupBy('order_type')
             ->get()
@@ -72,7 +75,7 @@ class DashboardController extends Controller
                 'revenue' => (float) $row->revenue,
             ]);
 
-        $salesByPayment = Order::whereDate('created_at', $today)
+        $salesByPayment = Order::whereBetween('created_at', [$dateFrom, $dateTo])
             ->where('status', 'completed')
             ->whereNotNull('payment_method')
             ->selectRaw("payment_method, count(*) as count, sum(total) as revenue")
@@ -85,15 +88,15 @@ class DashboardController extends Controller
             ]);
 
         $activeOrders = Order::whereIn('status', ['pending', 'confirmed', 'preparing', 'ready', 'served'])->count();
-        $completedToday = Order::whereDate('created_at', $today)->where('status', 'completed')->count();
-        $cancelledToday = Order::whereDate('created_at', $today)->where('status', 'cancelled')->count();
+        $completedToday = Order::whereBetween('created_at', [$dateFrom, $dateTo])->where('status', 'completed')->count();
+        $cancelledToday = Order::whereBetween('created_at', [$dateFrom, $dateTo])->where('status', 'cancelled')->count();
 
-        $avgPrepTime = Order::whereDate('created_at', $today)
+        $avgPrepTime = Order::whereBetween('created_at', [$dateFrom, $dateTo])
             ->where('status', 'completed')
             ->get(['created_at', 'updated_at'])
             ->avg(fn ($order) => $order->created_at->diffInSeconds($order->updated_at) / 60);
 
-        $statusBreakdown = Order::whereDate('created_at', $today)
+        $statusBreakdown = Order::whereBetween('created_at', [$dateFrom, $dateTo])
             ->selectRaw("status, count(*) as count")
             ->groupBy('status')
             ->get()
@@ -130,8 +133,8 @@ class DashboardController extends Controller
                 'priority' => $kot->priority ?? 'normal',
             ]);
 
-        $topSellingItems = OrderItem::whereHas('order', function ($q) use ($today) {
-                $q->whereDate('created_at', $today)->where('status', 'completed');
+        $topSellingItems = OrderItem::whereHas('order', function ($q) use ($dateFrom, $dateTo) {
+                $q->whereBetween('created_at', [$dateFrom, $dateTo])->where('status', 'completed');
             })
             ->selectRaw("menu_item_id, name, sum(quantity) as quantity_sold, sum(total_price) as revenue")
             ->groupBy('menu_item_id', 'name')
@@ -146,7 +149,7 @@ class DashboardController extends Controller
                 'category' => '',
             ]);
 
-        $peakHours = Order::whereDate('created_at', $today)
+        $peakHours = Order::whereBetween('created_at', [$dateFrom, $dateTo])
             ->where('status', 'completed')
             ->get(['created_at', 'total'])
             ->groupBy(fn ($order) => (int) $order->created_at->format('G'))
@@ -201,7 +204,7 @@ class DashboardController extends Controller
 
         $recentOrders = Order::with(['customer', 'table'])
             ->withCount('items')
-            ->whereDate('created_at', $today)
+            ->whereBetween('created_at', [$dateFrom, $dateTo])
             ->orderBy('created_at', 'desc')
             ->limit(10)
             ->get()
@@ -218,7 +221,7 @@ class DashboardController extends Controller
             ]);
 
         $recentActivities = Order::with(['customer', 'table'])
-            ->where('created_at', '>=', now()->subHours(4))
+            ->whereBetween('created_at', [$dateFrom, $dateTo])
             ->orderBy('created_at', 'desc')
             ->limit(15)
             ->get()
@@ -318,6 +321,10 @@ class DashboardController extends Controller
                 'total_customers' => $totalCustomers,
                 'today_reservations' => $todayReservations,
                 'waitlist_count' => $waitlistCount,
+                'date_range' => [
+                    'from' => $dateFrom->toDateString(),
+                    'to' => $dateTo->toDateString(),
+                ],
             ],
         ];
 

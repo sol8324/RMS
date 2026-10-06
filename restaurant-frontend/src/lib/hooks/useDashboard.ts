@@ -5,12 +5,19 @@ import api from "@/lib/api/client";
 import type { ApiResponse } from "@/lib/types";
 import { normalizeDashboardSummary } from "@/features/dashboard/normalizer";
 
-export function useDashboard() {
+export interface DashboardDateRange {
+  date_from?: string;
+  date_to?: string;
+}
+
+export function useDashboard(dateRange?: DashboardDateRange) {
   return useQuery({
-    queryKey: ["dashboard"],
+    queryKey: ["dashboard", dateRange],
     queryFn: () =>
       api
-        .get<ApiResponse<unknown>>("/dashboard/summary")
+        .get<ApiResponse<unknown>>("/dashboard/summary", {
+          params: dateRange,
+        })
         .then((res) => normalizeDashboardSummary(res.data.data)),
     staleTime: 30000,
     refetchInterval: 30000,
