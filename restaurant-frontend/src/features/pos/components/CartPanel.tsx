@@ -93,6 +93,12 @@ export function CartPanel({
                     ? ` · ${existingOrder.customer.name}`
                     : ""}
                 </p>
+                {existingOrder.notes && (
+                  <p className="text-xs text-amber-600 dark:text-amber-400 mt-1 flex items-center gap-1">
+                    <span className="text-[10px]">📝</span>
+                    {existingOrder.notes}
+                  </p>
+                )}
               </div>
               <Badge variant="secondary" className="text-[9px] px-1.5 py-0">
                 {formatLabel(existingOrder.payment_status ?? "unpaid")}
@@ -117,6 +123,12 @@ export function CartPanel({
                 <p className="text-xs text-right text-muted-foreground">
                   {formatCurrency(item.total_amount)}
                 </p>
+                {item.notes && (
+                  <p className="text-xs text-amber-600 dark:text-amber-400 mt-1 flex items-center gap-1">
+                    <span className="text-[10px]">📝</span>
+                    {item.notes}
+                  </p>
+                )}
               </div>
             ))}
           </div>

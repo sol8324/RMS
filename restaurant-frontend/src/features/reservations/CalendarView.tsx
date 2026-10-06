@@ -5,7 +5,7 @@ import { Calendar } from "@/components/ui/calendar";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Users, CalendarDays, CalendarClock, ChevronLeft, ChevronRight, Table as TableIcon, Circle, AlertCircle } from "lucide-react";
+import { Users, CalendarDays, CalendarClock, ChevronLeft, ChevronRight, Table as TableIcon, Circle, AlertCircle, Clock } from "lucide-react";
 import type { Reservation, TableOccupancy, TableOccupancyByDate } from "@/lib/types";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
@@ -32,6 +32,23 @@ function formatTime(timeStr: string | undefined | null) {
   const ampm = hour >= 12 ? "PM" : "AM";
   const h12 = hour % 12 || 12;
   return `${h12}:${minute} ${ampm}`;
+}
+
+function getTimeUntil(timeStr: string | undefined | null): string {
+  if (!timeStr) return "";
+  const now = new Date();
+  const [hours, minutes] = timeStr.split(":").map(Number);
+  const target = new Date();
+  target.setHours(hours, minutes, 0, 0);
+  
+  const diffMs = target.getTime() - now.getTime();
+  if (diffMs <= 0) return "Now";
+  
+  const hoursUntil = Math.floor(diffMs / (1000 * 60 * 60));
+  const minutesUntil = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
+  
+  if (hoursUntil > 0) return `${hoursUntil}h ${minutesUntil}m`;
+  return `${minutesUntil}m`;
 }
 
 const STATUS_DOT: Record<string, string> = {
@@ -415,9 +432,9 @@ return (
                           </div>
                           <Badge variant={res.status === "cancelled" ? "destructive" : res.status === "confirmed" ? "default" : "secondary"} className="shrink-0 rounded-full text-[11px] capitalize">
                             {res.status}
-                          </Badge>
+</Badge>
                         </div>
-                      ))}
+))}
                   </div>
                 </div>
               )}
@@ -449,19 +466,30 @@ return (
                   </div>
                 </div>
               )}
-              {selectedDateTableOccupancy.length > 0 && (
-                <div>
-                  <h4 className="text-sm font-medium mb-2 flex items-center gap-2">
-                    <TableIcon className="h-4 w-4" />
-                    Table Occupancy
-                  </h4>
-                  <div className="space-y-1 max-h-[300px] overflow-y-auto pr-1">
+              <div className="space-y-2 max-h-[300px] overflow-y-auto pr-1">
                     {selectedDateTableOccupancy.map((table: TableOccupancy) => {
                       const isEventDay = hasEvent;
+                      // Find the next upcoming reservation for this table
+                      const nextReservation = table.has_reservation && table.reservations.length > 0
+                        ? table.reservations
+                            .map((r) => ({
+                              ...r,
+                              timeObj: new Date(`2000-01-01T${r.reservation_time}`)
+                            }))
+                            .sort((a, b) => a.timeObj.getTime() - b.timeObj.getTime())
+                            .find((r) => {
+                              const now = new Date();
+                              const resTime = new Date();
+                              const [h, m] = r.reservation_time.split(":").map(Number);
+                              resTime.setHours(h, m, 0, 0);
+                              return resTime >= now;
+                            })
+                        : null;
+                      
                       return (
                         <div
                           key={table.id}
-                          className="flex items-center gap-3 rounded-lg border p-2 hover:bg-muted/40 transition-colors"
+                          className="flex items-start gap-3 rounded-lg border bg-card p-3 hover:bg-muted/40 transition-colors"
                         >
                           <div className="flex items-center gap-2 shrink-0">
                             <span
@@ -470,47 +498,78 @@ return (
                                 isEventDay ? "bg-violet-500" : getTableStatusColor(table.status, table.has_reservation)
                               )}
                             />
-                            <span className="text-sm font-medium">Table {table.number}</span>
-                            <span className="text-xs text-muted-foreground">(cap: {table.capacity})</span>
+                            <div className="flex flex-col gap-0.5">
+                              <span className="text-sm font-medium">Table {table.number}</span>
+                              <span className="text-xs text-muted-foreground">Capacity: {table.capacity}</span>
+                            </div>
                           </div>
-<div className="flex-1 min-w-0">
+                          <div className="flex-1 min-w-0 space-y-1.5">
                             {isEventDay ? (
-                              <span className="text-xs text-violet-600 dark:text-violet-400 font-medium">
-                                Reserved for Event
-                              </span>
-                            ) : (
-                              table.has_reservation && table.reservations.length > 0 ? (
-                                <div className="flex flex-wrap gap-1">
-                                  {table.reservations.map((r: { reservation_time: string; status: string }, idx: number) => (
-                                    <span
+                              <div className="flex items-center gap-2 px-2 py-1.5 rounded bg-violet-50 dark:bg-violet-900/20 border border-violet-200 dark:border-violet-800">
+                                <CalendarDays className="h-3.5 w-3.5 text-violet-600 dark:text-violet-400" />
+                                <span className="text-xs text-violet-700 dark:text-violet-300 font-medium">
+                                  Reserved for Event
+                                </span>
+                              </div>
+                            ) : table.has_reservation && table.reservations.length > 0 ? (
+                              <>
+                                {table.reservations.map((r: { reservation_time: string; status: string }, idx: number) => {
+                                  const timeUntil = getTimeUntil(r.reservation_time);
+                                  const isNext = nextReservation && nextReservation.reservation_time === r.reservation_time;
+                                  return (
+                                    <div
                                       key={idx}
                                       className={cn(
-                                        "inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium",
-                                        getStatusColor(r.status)
+                                        "flex items-center gap-2 px-2 py-1.5 rounded border transition-colors",
+                                        isNext ? "bg-primary/5 border-primary/30" : "bg-muted/30 border-muted"
                                       )}
                                     >
-                                      {formatTime(r.reservation_time)}
-                                    </span>
-                                  ))}
-                                </div>
-                              ) : (
-                                <span className="text-xs text-muted-foreground">Available</span>
-                              )
+                                      <div className="flex items-center gap-1.5 flex-1 min-w-0">
+                                        <span className={cn("inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium shrink-0", getStatusColor(r.status))}>
+                                          {formatTime(r.reservation_time)}
+                                        </span>
+                                        {timeUntil && (
+                                          <span className={cn(
+                                            "text-[10px] font-mono shrink-0 px-1.5 py-0.5 rounded",
+                                            isNext ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground"
+                                          )}>
+                                            {timeUntil}
+                                          </span>
+                                        )}
+                                        {isNext && (
+                                          <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-medium bg-primary/10 text-primary">
+                                            <Clock className="h-2.5 w-2.5" />
+                                            Next
+                                          </span>
+                                        )}
+                                      </div>
+                                      <span className={cn("text-[10px] font-medium capitalize shrink-0", getStatusColor(r.status))}>
+                                        {r.status}
+                                      </span>
+                                    </div>
+                                  );
+                                })}
+                              </>
+                            ) : (
+                              <div className="flex items-center gap-2 px-2 py-1.5 rounded bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800">
+                                <Circle className="h-3.5 w-3.5 text-green-600 dark:text-green-400" />
+                                <span className="text-xs text-green-700 dark:text-green-300 font-medium">
+                                  Available
+                                </span>
+                              </div>
                             )}
                           </div>
                         </div>
                       );
                     })}
                   </div>
-                </div>
-              )}
               {selectedReservations.length === 0 && selectedDateTableOccupancy.length === 0 && (
                 <div className="flex flex-col items-center justify-center py-12 text-center">
                   <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-muted border mb-4">
                     <CalendarDays className="h-6 w-6 text-muted-foreground" />
                   </div>
                   <p className="text-sm font-medium">No reservations or table data</p>
-                  <p className="mt-1 max-w-[220px] text-xs text-muted-foreground">
+                   <p className="mt-1 max-w-[220px] text-xs text-muted-foreground">
                     No reservations on this date and no table occupancy data available.
                   </p>
                 </div>
