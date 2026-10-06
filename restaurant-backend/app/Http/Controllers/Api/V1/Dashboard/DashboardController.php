@@ -28,6 +28,14 @@ class DashboardController extends Controller
         $dateFrom = $request->input('date_from', now()->subDays(6)->startOfDay());
         $dateTo = $request->input('date_to', now()->endOfDay());
 
+        // Parse string dates to Carbon objects
+        if (is_string($dateFrom)) {
+            $dateFrom = Carbon::parse($dateFrom)->startOfDay();
+        }
+        if (is_string($dateTo)) {
+            $dateTo = Carbon::parse($dateTo)->endOfDay();
+        }
+
         $today = now()->startOfDay();
         $yesterday = now()->subDay()->startOfDay();
         $weekStart = now()->startOfWeek();
