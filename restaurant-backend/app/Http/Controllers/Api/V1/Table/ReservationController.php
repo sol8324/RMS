@@ -23,13 +23,13 @@ class ReservationController extends Controller
         string $tableId,
         string $date,
         string $time,
+        int $durationMinutes = 90,
         ?string $excludeId = null
     ): bool {
-        $windowMinutes = (int) config('app.reservation_window_minutes', 90);
         // Normalize: callers may pass a full ISO datetime; only the date part is relevant here.
         $date = Carbon::parse($date)->toDateString();
         $slotStart = Carbon::parse("{$date} {$time}");
-        $slotEnd = $slotStart->copy()->addMinutes($windowMinutes);
+        $slotEnd = $slotStart->copy()->addMinutes($durationMinutes);
 
         $query = Reservation::where('table_id', $tableId)
             ->whereIn('status', self::BLOCKING_STATUSES)
@@ -46,7 +46,8 @@ class ReservationController extends Controller
             $resStart = Carbon::parse(
                 $reservation->reservation_date->toDateString().' '.$reservation->reservation_time
             );
-            $resEnd = $resStart->copy()->addMinutes($windowMinutes);
+            $resDuration = $reservation->duration_minutes ?? 90;
+            $resEnd = $resStart->copy()->addMinutes($resDuration);
 
             if ($slotStart->lt($resEnd) && $resStart->lt($slotEnd)) {
                 return true;
@@ -55,6 +56,150 @@ class ReservationController extends Controller
 
         return false;
     }
+
+    /**
+     * Get reservation policy settings from restaurant settings.
+     */
+    private function getReservationPolicy(): array
+    {
+        $settings = \App\Models\RestaurantSetting::first();
+        return [
+            'card_threshold' => $settings->reservation_card_threshold ?? 6,
+            'no_show_fee' => $settings->reservation_no_show_fee ?? 15.00,
+            'flag_threshold' => $settings->reservation_no_show_flag_threshold ?? 2,
+            'deposit_percentage' => $settings->reservation_deposit_percentage ?? 50.00,
+            'cancellation_window' => $settings->reservation_cancellation_window_minutes ?? 15,
+            'regular_duration' => $settings->reservation_regular_duration_minutes ?? 180,
+            'large_duration' => $settings->reservation_large_duration_minutes ?? 240,
+            'weekend_days' => $settings->reservation_weekend_days ?? [5, 6], // Friday=5, Saturday=6
+        ];
+    }
+
+    /**
+     * Calculate duration based on party size.
+     */
+    private function calculateDuration(int $partySize, array $policy): int
+    {
+        return $partySize <= 4 ? $policy['regular_duration'] : $policy['large_duration'];
+    }
+
+    /**
+     * Check if reservation requires card on file based on policy.
+     */
+    private function requiresCard(int $partySize, string $reservationDate, array $policy, ?int $guestFlagLevel = null): bool
+    {
+        // Check guest flag level first
+        if ($guestFlagLevel !== null) {
+            if ($guestFlagLevel >= 1) return true;
+        }
+
+        $dayOfWeek = Carbon::parse($reservationDate)->dayOfWeek; // 0=Sunday, 6=Saturday
+        $isWeekend = in_array($dayOfWeek, $policy['weekend_days']);
+
+        // Card required if: party size >= threshold OR weekend
+        return $partySize >= $policy['card_threshold'] || $isWeekend;
+    }
+
+    /**
+     * Check if reservation requires deposit based on policy.
+     */
+    private function requiresDeposit(int $partySize, array $policy, ?int $guestFlagLevel = null): bool
+    {
+        // Check guest flag level first
+        if ($guestFlagLevel !== null && $guestFlagLevel >= 2) {
+            return true;
+        }
+
+        // Deposit required for large parties (6+)
+        return $partySize >= $policy['card_threshold'];
+    }
+
+    /**
+     * Calculate deposit amount based on policy percentage.
+     * This is a simplified calculation - in reality would be based on estimated bill.
+     */
+    private function calculateDepositAmount(int $partySize, array $policy): float
+    {
+        // Estimate: $30 per person average spend
+        $estimatedBill = $partySize * 30;
+        return round($estimatedBill * ($policy['deposit_percentage'] / 100), 2);
+    }
+
+    /**
+     * Check table availability for the full duration of the reservation.
+     */
+    private function isTableAvailableForDuration(string $tableId, string $date, string $time, int $durationMinutes, ?string $excludeId = null): bool
+    {
+        return ! $this->overlapsActiveReservation($tableId, $date, $time, $durationMinutes, $excludeId);
+    }
+
+    /**
+     * Find the best available table for a party size and time slot.
+     */
+    private function findBestAvailableTable(int $partySize, string $date, string $time, int $durationMinutes): ?Table
+    {
+        $tables = Table::where('is_active', true)
+            ->whereNotIn('status', ['needs_cleaning', 'maintenance'])
+            ->where('capacity', '>=', $partySize)
+            ->orderBy('capacity')
+            ->orderBy('number')
+            ->get();
+
+        foreach ($tables as $table) {
+            if ($this->isTableAvailableForDuration($table->id, $date, $time, $durationMinutes)) {
+                return $table;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Get reservation policy for frontend.
+     */
+    public function policy(Request $request): JsonResponse
+    {
+        $policy = $this->getReservationPolicy();
+        return $this->success($policy);
+    }
+
+    /**
+     * Check availability for a specific date/time/party size.
+     */
+    public function checkAvailability(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'reservation_date' => 'required|date|after_or_equal:today',
+            'reservation_time' => 'required|date_format:H:i',
+            'party_size' => 'required|integer|min:1|max:50',
+        ]);
+
+        $policy = $this->getReservationPolicy();
+        $duration = $this->calculateDuration($validated['party_size'], $policy);
+        $table = $this->findBestAvailableTable($validated['party_size'], $validated['reservation_date'], $validated['reservation_time'], $duration);
+
+        $requiresCard = $this->requiresCard($validated['party_size'], $validated['reservation_date'], $policy);
+        $requiresDeposit = $this->requiresDeposit($validated['party_size'], $policy);
+
+        return $this->success([
+            'available' => $table !== null,
+            'table' => $table ? [
+                'id' => $table->id,
+                'number' => $table->number,
+                'capacity' => $table->capacity,
+            ] : null,
+            'duration_minutes' => $duration,
+            'end_time' => Carbon::parse("{$validated['reservation_date']} {$validated['reservation_time']}")->addMinutes($duration)->format('H:i'),
+            'requires_card' => $requiresCard,
+            'requires_deposit' => $requiresDeposit,
+            'deposit_amount' => $requiresDeposit ? $this->calculateDepositAmount($validated['party_size'], $policy) : 0,
+            'policy' => [
+                'card_threshold' => $policy['card_threshold'],
+                'weekend_days' => $policy['weekend_days'],
+            ],
+        ]);
+    }
+
     public function index(Request $request): JsonResponse
     {
         $query = Reservation::with(['customer', 'table']);
@@ -101,6 +246,7 @@ class ReservationController extends Controller
             'status' => $r->status,
             'source' => $r->source,
             'special_requests' => $r->special_requests,
+            'event_type' => $r->event_type,
             'customer' => $r->customer ? [
                 'id' => $r->customer->id,
                 'name' => $r->customer->name,
@@ -132,43 +278,109 @@ class ReservationController extends Controller
             'guest_name' => 'nullable|required_without:customer_id|string|max:255',
             'guest_phone' => 'nullable|required_without:customer_id|string|max:50',
             'guest_email' => 'nullable|email|max:255',
-            'party_size' => 'required|integer|min:1',
+            'party_size' => 'required|integer|min:1|max:50',
             'reservation_date' => 'required|date|after_or_equal:today',
             'reservation_time' => 'required|date_format:H:i',
             'source' => 'sometimes|string|in:phone,online,walk_in,app',
             'special_requests' => 'nullable|string|max:2000',
+            'event_type' => 'nullable|string|in:Birthday,Anniversary,Corporate,Wedding,Holiday Party,Graduation,Baby Shower,Bridal Shower,Rehearsal Dinner,Other',
+            'card_on_file' => 'sometimes|boolean',
+            'deposit_paid' => 'sometimes|boolean',
         ]);
 
         // Normalize to a pure date: clients may send an ISO datetime (date+T+time).
         $validated['reservation_date'] = Carbon::parse($validated['reservation_date'])->toDateString();
 
+        // Get policy settings
+        $policy = $this->getReservationPolicy();
+        $partySize = (int) $validated['party_size'];
+
+        // Determine duration based on party size
+        $duration = $this->calculateDuration($partySize, $policy);
+        $validated['duration_minutes'] = $duration;
+        $validated['end_time'] = Carbon::parse("{$validated['reservation_date']} {$validated['reservation_time']}")->addMinutes($duration)->format('H:i');
+
+        // Check if customer has flag level (if customer_id provided)
+        $guestFlagLevel = 0;
         if (! empty($validated['customer_id'])) {
             $customer = Customer::where('is_active', true)->find($validated['customer_id']);
-            if (! $customer) {
-                return $this->error('Select an active registered customer.', 422);
+            if ($customer) {
+                // Check customer's no-show counter for flag level
+                $guestFlagLevel = $customer->no_show_counter >= $policy['flag_threshold'] ? 2 :
+                    ($customer->no_show_counter >= 1 ? 1 : 0);
+                $validated['guest_name'] = $customer->name;
+                $validated['guest_phone'] = $customer->phone;
+                $validated['guest_email'] = $customer->email;
             }
-            $validated['guest_name'] = $customer->name;
-            $validated['guest_phone'] = $customer->phone;
-            $validated['guest_email'] = $customer->email;
         }
 
+        // Determine card/deposit requirements
+        $requiresCard = $this->requiresCard($partySize, $validated['reservation_date'], $policy, $guestFlagLevel);
+        $requiresDeposit = $this->requiresDeposit($partySize, $policy, $guestFlagLevel);
+
+        $validated['card_required'] = $requiresCard;
+        $validated['deposit_required'] = $requiresDeposit;
+        $validated['card_on_file'] = $validated['card_on_file'] ?? false;
+        $validated['deposit_paid'] = $validated['deposit_paid'] ?? false;
+
+        if ($requiresDeposit) {
+            $validated['deposit_amount'] = $this->calculateDepositAmount($partySize, $policy);
+        }
+
+        // Set reserved_party_size
+        $validated['reserved_party_size'] = $partySize;
+
+        // Validate table availability for the full duration
         if (! empty($validated['table_id'])) {
             $table = Table::where('id', $validated['table_id'])->first();
             if (! $table || ! $table->is_active || in_array($table->status, ['needs_cleaning', 'maintenance'], true)) {
                 return $this->error('The selected table is not available.', 422);
             }
-            if ((int) $validated['party_size'] > (int) $table->capacity) {
+            if ($partySize > (int) $table->capacity) {
                 return $this->error(
                     'Party size exceeds the capacity of the selected table.',
                     422
                 );
             }
-            if ($this->overlapsActiveReservation($validated['table_id'], $validated['reservation_date'], $validated['reservation_time'])) {
+            if ($this->overlapsActiveReservation($validated['table_id'], $validated['reservation_date'], $validated['reservation_time'], $duration)) {
                 return $this->error(
                     'This table is already reserved for the selected time.',
                     409
                 );
             }
+        } else {
+            // Auto-assign best available table
+            $bestTable = $this->findBestAvailableTable($partySize, $validated['reservation_date'], $validated['reservation_time'], $duration);
+            if ($bestTable) {
+                $validated['table_id'] = $bestTable->id;
+            }
+        }
+
+        // If card required but not on file, return info for frontend to handle
+        if ($requiresCard && ! $validated['card_on_file']) {
+            return $this->error('Card on file required for this reservation. Please provide payment details.', 422, [
+                'requires_card' => true,
+                'requires_deposit' => $requiresDeposit,
+                'deposit_amount' => $validated['deposit_amount'] ?? 0,
+                'policy' => [
+                    'card_threshold' => $policy['card_threshold'],
+                    'weekend_days' => $policy['weekend_days'],
+                    'reason' => $partySize >= $policy['card_threshold'] ? 'Large party (6+ people)' : 'Weekend reservation (Friday/Saturday)',
+                ],
+            ]);
+        }
+
+        // If deposit required but not paid, return info
+        if ($requiresDeposit && ! $validated['deposit_paid']) {
+            return $this->error('Deposit required for this reservation.', 422, [
+                'requires_card' => $requiresCard,
+                'requires_deposit' => true,
+                'deposit_amount' => $validated['deposit_amount'] ?? 0,
+                'policy' => [
+                    'deposit_percentage' => $policy['deposit_percentage'],
+                    'reason' => 'Large party (6+ people)',
+                ],
+            ]);
         }
 
         $validated['reservation_number'] = 'RES-' . strtoupper(uniqid());
@@ -190,11 +402,20 @@ class ReservationController extends Controller
             'guest_phone' => $reservation->guest_phone,
             'guest_email' => $reservation->guest_email,
             'party_size' => $reservation->party_size,
+            'reserved_party_size' => $reservation->reserved_party_size,
             'reservation_date' => $reservation->reservation_date?->toDateString(),
             'reservation_time' => $reservation->reservation_time,
+            'end_time' => $reservation->end_time,
+            'duration_minutes' => $reservation->duration_minutes,
             'status' => $reservation->status,
             'source' => $reservation->source,
             'special_requests' => $reservation->special_requests,
+            'event_type' => $reservation->event_type,
+            'card_required' => $reservation->card_required,
+            'deposit_required' => $reservation->deposit_required,
+            'deposit_amount' => $reservation->deposit_amount,
+            'deposit_paid' => $reservation->deposit_paid,
+            'card_on_file' => $reservation->card_on_file,
             'customer' => $reservation->customer ? [
                 'id' => $reservation->customer->id,
                 'name' => $reservation->customer->name,
@@ -287,6 +508,9 @@ class ReservationController extends Controller
             ->orderBy('reservation_time')
             ->get();
 
+        // Get table occupancy for each date in range
+        $tableOccupancy = $this->getTableOccupancy($startDate, $endDate);
+
         $data = $reservations->map(fn (Reservation $r) => [
             'id' => $r->id,
             'reservation_number' => $r->reservation_number,
@@ -295,6 +519,7 @@ class ReservationController extends Controller
             'reservation_date' => $r->reservation_date?->toDateString(),
             'reservation_time' => $r->reservation_time,
             'status' => $r->status,
+            'event_type' => $r->event_type,
             'table' => $r->table ? [
                 'id' => $r->table->id,
                 'number' => $r->table->number,
@@ -305,7 +530,58 @@ class ReservationController extends Controller
             ] : null,
         ]);
 
-        return $this->success(['items' => $data]);
+        return $this->success([
+            'items' => $data,
+            'table_occupancy' => $tableOccupancy,
+        ]);
+    }
+
+    /**
+     * Get table occupancy for a date range.
+     * Returns tables with their reservation status for each date.
+     */
+    private function getTableOccupancy(string $startDate, string $endDate): array
+    {
+        $tables = \App\Models\Table::where('is_active', true)
+            ->whereNotIn('status', ['maintenance', 'needs_cleaning'])
+            ->orderBy('number')
+            ->get(['id', 'number', 'capacity', 'status']);
+
+        $reservations = Reservation::whereBetween('reservation_date', [$startDate, $endDate])
+            ->whereIn('status', ['pending', 'confirmed', 'seated'])
+            ->get(['table_id', 'reservation_date', 'reservation_time', 'status']);
+
+        $occupancy = [];
+        $start = \Carbon\Carbon::parse($startDate);
+        $end = \Carbon\Carbon::parse($endDate);
+
+        for ($date = $start->copy(); $date->lte($end); $date->addDay()) {
+            $dateStr = $date->toDateString();
+            $dayReservations = $reservations->where('reservation_date', $dateStr);
+
+            $dayOccupancy = $tables->map(function ($table) use ($dayReservations, $dateStr) {
+                $tableReservations = $dayReservations->where('table_id', $table->id);
+                $hasReservation = $tableReservations->isNotEmpty();
+
+                return [
+                    'id' => $table->id,
+                    'number' => $table->number,
+                    'capacity' => $table->capacity,
+                    'status' => $table->status,
+                    'has_reservation' => $hasReservation,
+                    'reservations' => $tableReservations->map(function ($r) {
+                        return [
+                            'reservation_time' => $r->reservation_time,
+                            'status' => $r->status,
+                        ];
+                    })->values()->all(),
+                ];
+            })->values()->all();
+
+            $occupancy[$dateStr] = $dayOccupancy;
+        }
+
+        return $occupancy;
     }
 
     public function show(string $id): JsonResponse
@@ -328,6 +604,7 @@ class ReservationController extends Controller
             'status' => $reservation->status,
             'source' => $reservation->source,
             'special_requests' => $reservation->special_requests,
+            'event_type' => $reservation->event_type,
             'cancellation_reason' => $reservation->cancellation_reason,
             'customer' => $reservation->customer ? [
                 'id' => $reservation->customer->id,
@@ -362,11 +639,12 @@ class ReservationController extends Controller
             'guest_name' => 'nullable|string|max:255',
             'guest_phone' => 'nullable|string|max:50',
             'guest_email' => 'nullable|email|max:255',
-            'party_size' => 'sometimes|integer|min:1',
+            'party_size' => 'sometimes|integer|min:1|max:50',
             'reservation_date' => 'sometimes|date|after_or_equal:today',
             'reservation_time' => 'sometimes|date_format:H:i',
             'source' => 'sometimes|string|in:phone,online,walk_in,app',
             'special_requests' => 'nullable|string|max:2000',
+            'event_type' => 'nullable|string|in:Birthday,Anniversary,Corporate,Wedding,Holiday Party,Graduation,Baby Shower,Bridal Shower,Rehearsal Dinner,Other',
         ]);
 
         if (isset($validated['reservation_date'])) {
@@ -408,7 +686,8 @@ class ReservationController extends Controller
             if (isset($validated['party_size']) && (int) $validated['party_size'] > (int) $table->capacity) {
                 return $this->error('Party size exceeds the capacity of the selected table.', 422);
             }
-            if ($this->overlapsActiveReservation($tableId, $date, $time, $reservation->id)) {
+            $durationMinutes = $reservation->duration_minutes ?? 90;
+            if ($this->overlapsActiveReservation($tableId, $date, $time, $durationMinutes, $reservation->id)) {
                 return $this->error('This table is already reserved for the selected time.', 409);
             }
         } elseif (isset($validated['party_size']) && $reservation->table_id) {
@@ -439,6 +718,7 @@ class ReservationController extends Controller
             'status' => $reservation->status,
             'source' => $reservation->source,
             'special_requests' => $reservation->special_requests,
+            'event_type' => $reservation->event_type,
             'customer' => $reservation->customer ? [
                 'id' => $reservation->customer->id,
                 'name' => $reservation->customer->name,
@@ -565,5 +845,233 @@ class ReservationController extends Controller
             'reservation_number' => $reservation->reservation_number,
             'status' => $reservation->status,
         ], 'Reservation status updated successfully.');
+    }
+
+    /**
+     * Check in a reservation with actual party size.
+     * Handles partial shows by releasing original table and finding a smaller one.
+     */
+    public function checkIn(Request $request, string $id): JsonResponse
+    {
+        $reservation = Reservation::find($id);
+
+        if (!$reservation) {
+            return $this->notFound('Reservation not found.');
+        }
+
+        if ($reservation->status !== 'pending' && $reservation->status !== 'confirmed') {
+            return $this->error('Only pending or confirmed reservations can be checked in.', 409);
+        }
+
+        $validated = $request->validate([
+            'actual_party_size' => 'required|integer|min:1|max:50',
+            'table_id' => 'nullable|exists:tables,id',
+        ]);
+
+        $actualPartySize = (int) $validated['actual_party_size'];
+        $reservedPartySize = $reservation->reserved_party_size ?? $reservation->party_size;
+
+        DB::transaction(function () use ($reservation, $actualPartySize, $reservedPartySize, $validated) {
+            $originalTableId = $reservation->table_id;
+
+            // If fewer people show up than reserved
+            if ($actualPartySize < $reservedPartySize) {
+                // Release the original table
+                if ($originalTableId) {
+                    $originalTable = Table::lockForUpdate()->find($originalTableId);
+                    if ($originalTable && $originalTable->is_active && $originalTable->status === 'occupied') {
+                        $originalTable->update(['status' => 'needs_cleaning']);
+                        AuditLogger::record('table_status_changed', $originalTable, [
+                            'description' => "Table {$originalTable->number} released due to partial show (reserved: {$reservedPartySize}, actual: {$actualPartySize})",
+                            'from' => 'occupied',
+                            'to' => 'needs_cleaning',
+                        ], null, ['status' => 'occupied']);
+                    }
+                }
+
+                // Find smallest available table for actual party size
+                $policy = $this->getReservationPolicy();
+                $duration = $reservation->duration_minutes ?? $policy['regular_duration'];
+                $newTable = $this->findBestAvailableTable($actualPartySize, $reservation->reservation_date->toDateString(), $reservation->reservation_time, $duration);
+
+                if ($newTable) {
+                    $reservation->update([
+                        'table_id' => $newTable->id,
+                        'actual_party_size' => $actualPartySize,
+                        'status' => 'seated',
+                    ]);
+                    $newTable->update(['status' => 'occupied']);
+                    AuditLogger::record('table_status_changed', $newTable, [
+                        'description' => "Table {$newTable->number} assigned for partial show (actual: {$actualPartySize})",
+                        'from' => 'available',
+                        'to' => 'occupied',
+                    ], null, ['status' => 'available']);
+                } else {
+                    // No suitable table found - keep original or mark as issue
+                    $reservation->update([
+                        'actual_party_size' => $actualPartySize,
+                        'status' => 'seated',
+                    ]);
+                }
+            } else {
+                // Full party or more showed up
+                $targetTableId = $validated['table_id'] ?? $originalTableId;
+                if ($targetTableId) {
+                    $targetTable = Table::lockForUpdate()->find($targetTableId);
+                    if ($targetTable && $targetTable->is_active && $targetTable->status !== 'occupied'
+                        && !in_array($targetTable->status, ['maintenance', 'needs_cleaning'], true)
+                    ) {
+                        $targetTable->update(['status' => 'occupied']);
+                        AuditLogger::record('table_status_changed', $targetTable, [
+                            'description' => "Table {$targetTable->number} status changed to Occupied for check-in",
+                            'from' => $targetTable->status,
+                            'to' => 'occupied',
+                        ], null, ['status' => $targetTable->status]);
+                    }
+                }
+                $reservation->update([
+                    'table_id' => $targetTableId,
+                    'actual_party_size' => $actualPartySize,
+                    'status' => 'seated',
+                ]);
+            }
+
+            // Increment partial show counter if applicable
+            if ($actualPartySize < $reservedPartySize && $reservation->customer_id) {
+                $customer = \App\Models\Customer::find($reservation->customer_id);
+                if ($customer) {
+                    $customer->increment('partial_show_counter');
+                }
+                $reservation->increment('partial_show_counter');
+            }
+        });
+
+        $reservation->load(['customer', 'table']);
+
+        \App\Services\AuditLogger::record('reservation_checked_in', $reservation, [
+            'description' => "Reservation {$reservation->reservation_number} checked in (reserved: {$reservedPartySize}, actual: {$actualPartySize})",
+            'reserved_party_size' => $reservedPartySize,
+            'actual_party_size' => $actualPartySize,
+        ]);
+
+        return $this->success([
+            'id' => $reservation->id,
+            'reservation_number' => $reservation->reservation_number,
+            'status' => $reservation->status,
+            'reserved_party_size' => $reservedPartySize,
+            'actual_party_size' => $reservation->actual_party_size,
+            'table' => $reservation->table ? [
+                'id' => $reservation->table->id,
+                'number' => $reservation->table->number,
+            ] : null,
+        ], 'Reservation checked in successfully.');
+    }
+
+    /**
+     * Process a no-show reservation.
+     * Charges fees, forfeits deposits, updates counters, applies flags.
+     */
+    public function processNoShow(Request $request, string $id): JsonResponse
+    {
+        $reservation = Reservation::find($id);
+
+        if (!$reservation) {
+            return $this->notFound('Reservation not found.');
+        }
+
+        if ($reservation->status !== 'pending' && $reservation->status !== 'confirmed') {
+            return $this->error('Only pending or confirmed reservations can be marked as no-show.', 409);
+        }
+
+        $policy = $this->getReservationPolicy();
+
+        DB::transaction(function () use ($reservation, $policy) {
+            // Release table if assigned
+            if ($reservation->table_id) {
+                $table = Table::lockForUpdate()->find($reservation->table_id);
+                if ($table && $table->is_active && $table->status === 'occupied') {
+                    $table->update(['status' => 'needs_cleaning']);
+                    AuditLogger::record('table_status_changed', $table, [
+                        'description' => "Table {$table->number} released due to no-show",
+                        'from' => 'occupied',
+                        'to' => 'needs_cleaning',
+                    ], null, ['status' => 'occupied']);
+                }
+            }
+
+            // Update reservation status
+            $reservation->update([
+                'status' => 'no_show',
+                'no_show_counter' => $reservation->no_show_counter + 1,
+            ]);
+
+            // Increment customer no-show counter
+            if ($reservation->customer_id) {
+                $customer = \App\Models\Customer::find($reservation->customer_id);
+                if ($customer) {
+                    $customer->increment('no_show_counter');
+
+                    // Check if flag level should increase
+                    $newCounter = $customer->no_show_counter;
+                    if ($newCounter >= $policy['flag_threshold'] && $customer->guest_flag_level < 2) {
+                        $customer->update(['guest_flag_level' => 2]); // Level 2: 50% deposit + card
+                    } elseif ($newCounter >= 1 && $customer->guest_flag_level < 1) {
+                        $customer->update(['guest_flag_level' => 1]); // Level 1: card required
+                    }
+                }
+            }
+
+            // Update reservation guest flag level
+            $newReservationCounter = $reservation->no_show_counter;
+            if ($newReservationCounter >= $policy['flag_threshold']) {
+                $reservation->update(['guest_flag_level' => 2]);
+            } elseif ($newReservationCounter >= 1) {
+                $reservation->update(['guest_flag_level' => 1]);
+            }
+
+            // Process no-show fee if card on file
+            $feeCharged = 0;
+            $depositForfeited = 0;
+
+            if ($reservation->card_on_file && $reservation->card_required) {
+                $feeCharged = $reservation->reserved_party_size * $policy['no_show_fee'];
+                // TODO: Integrate with payment processor to charge the card
+                // For now, just record the fee
+                AuditLogger::record('no_show_fee_charged', $reservation, [
+                    'description' => "No-show fee charged: {$feeCharged} for {$reservation->reserved_party_size} people",
+                    'amount' => $feeCharged,
+                    'party_size' => $reservation->reserved_party_size,
+                    'fee_per_person' => $policy['no_show_fee'],
+                ]);
+            }
+
+            // Forfeit deposit if paid
+            if ($reservation->deposit_paid && $reservation->deposit_amount > 0) {
+                $depositForfeited = $reservation->deposit_amount;
+                $reservation->update(['deposit_paid' => false, 'deposit_amount' => 0]);
+                AuditLogger::record('deposit_forfeited', $reservation, [
+                    'description' => "Deposit forfeited due to no-show: {$depositForfeited}",
+                    'amount' => $depositForfeited,
+                ]);
+            }
+        });
+
+        $reservation->load(['customer', 'table']);
+
+        \App\Services\AuditLogger::record('reservation_no_show', $reservation, [
+            'description' => "Reservation {$reservation->reservation_number} marked as no-show",
+            'no_show_counter' => $reservation->no_show_counter,
+            'guest_flag_level' => $reservation->guest_flag_level,
+        ]);
+
+        return $this->success([
+            'id' => $reservation->id,
+            'reservation_number' => $reservation->reservation_number,
+            'status' => $reservation->status,
+            'no_show_counter' => $reservation->no_show_counter,
+            'guest_flag_level' => $reservation->guest_flag_level,
+            'fee_charged' => $reservation->card_on_file && $reservation->card_required ? $reservation->reserved_party_size * $policy['no_show_fee'] : 0,
+            'deposit_forfeited' => $reservation->deposit_paid ? $reservation->deposit_amount : 0,
+        ], 'Reservation marked as no-show.');
     }
 }

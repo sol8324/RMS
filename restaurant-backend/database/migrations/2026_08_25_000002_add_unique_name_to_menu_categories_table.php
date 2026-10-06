@@ -2,6 +2,7 @@
 
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 /**
@@ -25,23 +26,28 @@ return new class extends Migration
         }
 
         // Defensively de-duplicate names WITHOUT deleting anything.
-        $duplicates = \Illuminate\Support\Facades\DB::table('menu_categories')
-            ->select('name', \Illuminate\Support\Facades\DB::raw('MIN(id) AS keep_id'))
+        // We do not use MIN(id) because PostgreSQL does not support MIN()
+        // directly on UUID columns.
+        $duplicates = DB::table('menu_categories')
+            ->select('name')
             ->groupBy('name')
             ->havingRaw('COUNT(*) > 1')
             ->get();
 
         foreach ($duplicates as $duplicate) {
-            $rows = \Illuminate\Support\Facades\DB::table('menu_categories')
+            $rows = DB::table('menu_categories')
                 ->where('name', $duplicate->name)
-                ->where('id', '!=', $duplicate->keep_id)
+                ->orderBy('created_at')
                 ->orderBy('id')
                 ->get(['id']);
 
-            foreach ($rows as $index => $row) {
-                \Illuminate\Support\Facades\DB::table('menu_categories')
+            // Keep the first row unchanged; rename the remaining duplicates.
+            foreach ($rows->skip(1)->values() as $index => $row) {
+                DB::table('menu_categories')
                     ->where('id', $row->id)
-                    ->update(['name' => $duplicate->name.' ('.($index + 2).')']);
+                    ->update([
+                        'name' => $duplicate->name . ' (' . ($index + 2) . ')',
+                    ]);
             }
         }
 

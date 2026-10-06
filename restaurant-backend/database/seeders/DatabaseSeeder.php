@@ -266,6 +266,15 @@ class DatabaseSeeder extends Seeder
             'auto_cancel_timeout' => 30,
             'allow_negative_inventory' => false,
             'low_stock_threshold' => 10,
+            // Reservation policy settings
+            'reservation_card_threshold' => 6,
+            'reservation_no_show_fee' => 15.00,
+            'reservation_no_show_flag_threshold' => 2,
+            'reservation_deposit_percentage' => 50.00,
+            'reservation_cancellation_window_minutes' => 15,
+            'reservation_regular_duration_minutes' => 180,
+            'reservation_large_duration_minutes' => 240,
+            'reservation_weekend_days' => [5, 6], // Friday=5, Saturday=6
             'opening_hours' => [
                 'monday' => ['open' => '08:00', 'close' => '22:00'],
                 'tuesday' => ['open' => '08:00', 'close' => '22:00'],

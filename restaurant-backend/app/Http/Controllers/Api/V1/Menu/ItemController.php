@@ -52,6 +52,10 @@ class ItemController extends Controller
             'price' => (float) $item->price,
             'cost_price' => (float) $item->cost_price,
             'image_url' => $item->image_url,
+            'image_data' => $item->image_data,
+            'image_mime_type' => $item->image_mime_type,
+            'image_data_uri' => $item->image_data_uri,
+            'effective_image_url' => $item->effective_image_url,
             'sku' => $item->sku,
             'is_available' => $item->is_available,
             'is_featured' => $item->is_featured,
@@ -91,6 +95,8 @@ class ItemController extends Controller
             'price' => 'required|numeric|min:0',
             'cost_price' => 'nullable|numeric|min:0',
             'image_url' => 'nullable|string|max:500',
+            'image_data' => 'nullable|string',
+            'image_mime_type' => 'nullable|string|max:100',
             'sku' => 'nullable|string|max:100|unique:menu_items,sku',
             'is_available' => 'sometimes|boolean',
             'is_featured' => 'sometimes|boolean',
@@ -126,6 +132,10 @@ class ItemController extends Controller
             'price' => (float) $item->price,
             'cost_price' => (float) $item->cost_price,
             'image_url' => $item->image_url,
+            'image_data' => $item->image_data,
+            'image_mime_type' => $item->image_mime_type,
+            'image_data_uri' => $item->image_data_uri,
+            'effective_image_url' => $item->effective_image_url,
             'sku' => $item->sku,
             'is_available' => $item->is_available,
             'is_featured' => $item->is_featured,
@@ -158,6 +168,10 @@ class ItemController extends Controller
             'price' => (float) $item->price,
             'cost_price' => (float) $item->cost_price,
             'image_url' => $item->image_url,
+            'image_data' => $item->image_data,
+            'image_mime_type' => $item->image_mime_type,
+            'image_data_uri' => $item->image_data_uri,
+            'effective_image_url' => $item->effective_image_url,
             'sku' => $item->sku,
             'is_available' => $item->is_available,
             'is_featured' => $item->is_featured,
@@ -193,6 +207,8 @@ class ItemController extends Controller
             'price' => 'sometimes|numeric|min:0',
             'cost_price' => 'nullable|numeric|min:0',
             'image_url' => 'nullable|string|max:500',
+            'image_data' => 'nullable|string',
+            'image_mime_type' => 'nullable|string|max:100',
             'sku' => "nullable|string|max:100|unique:menu_items,sku,{$id}",
             'is_available' => 'sometimes|boolean',
             'is_featured' => 'sometimes|boolean',
@@ -230,6 +246,10 @@ class ItemController extends Controller
             'price' => (float) $item->price,
             'cost_price' => (float) $item->cost_price,
             'image_url' => $item->image_url,
+            'image_data' => $item->image_data,
+            'image_mime_type' => $item->image_mime_type,
+            'image_data_uri' => $item->image_data_uri,
+            'effective_image_url' => $item->effective_image_url,
             'sku' => $item->sku,
             'is_available' => $item->is_available,
             'is_featured' => $item->is_featured,
@@ -295,6 +315,30 @@ class ItemController extends Controller
             return $this->notFound('Menu item not found.');
         }
 
+        // Check if base64 image data is provided
+        if ($request->has('image_data') && $request->has('image_mime_type')) {
+            $request->validate([
+                'image_data' => 'required|string',
+                'image_mime_type' => 'required|string|in:image/jpeg,image/png,image/webp',
+            ]);
+
+            // Remove old base64 image if exists
+            $item->update([
+                'image_data' => $request->image_data,
+                'image_mime_type' => $request->image_mime_type,
+                'image_url' => null, // Clear old file URL
+            ]);
+
+            return $this->success([
+                'id' => $item->id,
+                'image_data' => $item->image_data,
+                'image_mime_type' => $item->image_mime_type,
+                'image_data_uri' => $item->image_data_uri,
+                'effective_image_url' => $item->effective_image_url,
+            ], 'Base64 image uploaded successfully.');
+        }
+
+        // Handle file upload (existing functionality)
         $request->validate([
             'image' => 'required|image|max:5120|mimes:jpeg,png,webp',
         ]);
@@ -304,7 +348,11 @@ class ItemController extends Controller
         }
 
         $path = $request->file('image')->store('menu-items', 'public');
-        $item->update(['image_url' => Storage::url($path)]);
+        $item->update([
+            'image_url' => Storage::url($path),
+            'image_data' => null,
+            'image_mime_type' => null,
+        ]);
 
         return $this->success([
             'id' => $item->id,

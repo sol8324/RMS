@@ -12,13 +12,13 @@ class ProductionDataSeeder extends Seeder
 {
     private array $ids = [];
     private Carbon $now;
-    private Carbon $sixMonthsAgo;
+    private Carbon $sevenYearsAgo;
     private ?string $userPassword = null;
 
     public function run(): void
     {
         $this->now = Carbon::now();
-        $this->sixMonthsAgo = (new Carbon($this->now))->subMonths(6);
+        $this->sevenYearsAgo = (new Carbon($this->now))->subYears(7);
 
         $this->setForeignKeyChecks(false);
 
@@ -31,7 +31,6 @@ class ProductionDataSeeder extends Seeder
         $this->createSuppliers();
         $this->createIngredients();
         $this->createRecipes();
-        $this->createFloorPlans();
         $this->createTables();
         $this->createDiscounts();
         $this->createReservations();
@@ -58,7 +57,7 @@ class ProductionDataSeeder extends Seeder
     private function truncateRelevantTables(): void
     {
         $tables = [
-            'audit_logs', 'customers', 'floor_plans', 'tables', 'reservations',
+            'audit_logs', 'customers', 'tables', 'reservations',
             'menu_categories', 'menu_items', 'menu_modifiers', 'menu_item_modifiers',
             'menu_combos', 'menu_combo_items', 'suppliers', 'ingredients',
             'recipes', 'recipe_ingredients', 'orders', 'order_items',
@@ -119,7 +118,7 @@ class ProductionDataSeeder extends Seeder
     private function randomDate(Carbon $start, ?Carbon $end = null): string
     {
         $end = $end ?? $this->now;
-        $diff = $end->diffInDays($start);
+        $diff = $start->diffInDays($end); // Use start->diffInDays(end) to get positive diff
         return (new Carbon($start))->addDays(mt_rand(0, max(0, $diff)))->format('Y-m-d');
     }
 
@@ -141,8 +140,8 @@ class ProductionDataSeeder extends Seeder
                 'address' => $outlet['address'],
                 'phone' => $outlet['phone'],
                 'is_active' => true,
-                'created_at' => $this->sixMonthsAgo,
-                'updated_at' => $this->sixMonthsAgo,
+                'created_at' => $this->sevenYearsAgo,
+                'updated_at' => $this->sevenYearsAgo,
             ]);
         }
     }
@@ -186,7 +185,7 @@ class ProductionDataSeeder extends Seeder
             // Staff profile missing (e.g., after operational truncate) — recreate it
             $staffId = $this->uid('staff', 99);
             $this->ids['staff_profiles'][] = $staffId;
-            $createdAt = $existing->created_at ?? $this->sixMonthsAgo;
+            $createdAt = $existing->created_at ?? $this->sevenYearsAgo;
             DB::table('staff_profiles')->insert([
                 'id' => $staffId,
                 'user_id' => $existing->id,
@@ -195,7 +194,7 @@ class ProductionDataSeeder extends Seeder
                 'department' => 'Kitchen',
                 'hourly_rate' => $this->randomFloat(60, 180),
                 'base_salary' => $this->randomFloat(15000, 45000),
-                'hire_date' => $this->randomDate($this->sixMonthsAgo),
+                'hire_date' => $this->randomDate($this->sevenYearsAgo),
                 'employment_type' => 'full_time',
                 'phone' => '09919999999',
                 'address' => 'Caloocan City',
@@ -208,7 +207,7 @@ class ProductionDataSeeder extends Seeder
 
         $id = $this->uid('user', 99);
         $this->ids['users'][] = $id;
-        $createdAt = $this->randomTimestamp($this->sixMonthsAgo, (new Carbon($this->sixMonthsAgo))->addMonth());
+        $createdAt = $this->randomTimestamp($this->sevenYearsAgo, (new Carbon($this->sevenYearsAgo))->addMonth());
         DB::table('users')->insert([
             'id' => $id,
             'name' => 'Jayson Statham',
@@ -217,7 +216,7 @@ class ProductionDataSeeder extends Seeder
             'is_active' => true,
             'email_verified_at' => $createdAt,
             'avatar' => null,
-            'last_login_at' => $this->randomTimestamp((new Carbon($this->sixMonthsAgo))->addMonths(5)),
+            'last_login_at' => $this->randomTimestamp((new Carbon($this->sevenYearsAgo))->addMonths(5)),
             'created_at' => $createdAt,
             'updated_at' => $createdAt,
         ]);
@@ -236,7 +235,7 @@ class ProductionDataSeeder extends Seeder
             'department' => 'Kitchen',
             'hourly_rate' => $this->randomFloat(60, 180),
             'base_salary' => $this->randomFloat(15000, 45000),
-            'hire_date' => $this->randomDate($this->sixMonthsAgo),
+            'hire_date' => $this->randomDate($this->sevenYearsAgo),
             'employment_type' => 'full_time',
             'phone' => '09919999999',
             'address' => 'Caloocan City',
@@ -250,8 +249,6 @@ class ProductionDataSeeder extends Seeder
 
     private function createCustomers(): void
     {
-        // Local cleanup: keep customers at 0. truncateRelevantTables() already clears the table.
-        return;
         $firstNames = [
             'Juan', 'Maria', 'Jose', 'Ana', 'Pedro', 'Rosa', 'Antonio', 'Luz', 'Manuel', 'Elena',
             'Carlos', 'Teresa', 'Ramon', 'Cecilia', 'Luis', 'Carmen', 'Miguel', 'Josefina', 'Andres', 'Beatriz',
@@ -263,6 +260,8 @@ class ProductionDataSeeder extends Seeder
             'Wilfredo', 'Fe', 'Xavier', 'Gracia', 'Ysidro', 'Honorata', 'Zosimo', 'Iris', 'Adrian', 'Myla',
             'Benny', 'Nympha', 'Chris', 'Ophelia', 'Danilo', 'Pacita', 'Edwin', 'Rebecca', 'Froilan', 'Susana',
             'Gideon', 'Tiffany', 'Henry', 'Ursula', 'Ivan', 'Vivian', 'Jonathan', 'Wendy', 'Kyle', 'Yumi',
+            'Alex', 'Bianca', 'Christian', 'Diana', 'Eric', 'Fiona', 'Gabriel', 'Hannah', 'Ian', 'Jade',
+            'Kevin', 'Leah', 'Mark', 'Nina', 'Oliver', 'Paula', 'Quinn', 'Rachel', 'Stephen', 'Tina',
         ];
 
         $lastNames = [
@@ -271,6 +270,7 @@ class ProductionDataSeeder extends Seeder
             'Tolentino', 'Bautista', 'Lopez', 'Marcos', 'Moreno', 'Rivera', 'Gomez', 'Domingo', 'Valdez', 'Gutierrez',
             'Aguilar', 'David', 'Diaz', 'Lazaro', 'Macapagal', 'Magsaysay', 'Martinez', 'Miranda', 'Pascual', 'Pineda',
             'Quezon', 'Quinto', 'Roldan', 'Rosario', 'Samson', 'Sison', 'Sorianoo', 'Tecson', 'Trinidad', 'Vargas',
+            'Abad', 'Agustin', 'Alberto', 'Amado', 'Andres', 'Antonio', 'Aquino', 'Arcilla', 'Bacani', 'Bautista',
         ];
 
         $streets = ['Rizal Ave', 'McArthur Hwy', 'EDSA', 'Commonwealth Ave', 'Taft Ave', 'Quezon Blvd', 'Ayala Ave',
@@ -281,12 +281,13 @@ class ProductionDataSeeder extends Seeder
 
         $cities = ['Caloocan City', 'Baliwag', 'Manila', 'Quezon City', 'Mandaluyong', 'Makati', 'Pasig', 'Valenzuela', 'Malolos'];
 
-        for ($i = 1; $i <= 300; $i++) {
+        // ~1,500 customers over 7 years
+        for ($i = 1; $i <= 1500; $i++) {
             $id = $this->uid('customer', $i);
             $this->ids['customers'][] = $id;
             $firstName = $this->randomFrom($firstNames);
             $lastName = $this->randomFrom($lastNames);
-            $createdAt = $this->randomTimestamp($this->sixMonthsAgo);
+            $createdAt = $this->randomTimestamp($this->sevenYearsAgo);
 
             DB::table('customers')->insert([
                 'id' => $id,
@@ -294,9 +295,12 @@ class ProductionDataSeeder extends Seeder
                 'email' => strtolower($firstName . '.' . $lastName . $i . '@email.com'),
                 'phone' => $this->randomFrom(['0917', '0920', '0927', '0932', '0939']) . sprintf('%07d', mt_rand(0, 9999999)),
                 'customer_type' => 'registered',
-                'loyalty_points' => 0,
-                'total_spent' => $this->randomFloat(0, 50000),
-                'visit_count' => $this->randomInt(0, 150),
+                'loyalty_points' => $this->randomInt(0, 5000),
+                'total_spent' => $this->randomFloat(0, 100000),
+                'visit_count' => $this->randomInt(0, 200),
+                'no_show_counter' => $this->randomInt(0, 3),
+                'partial_show_counter' => $this->randomInt(0, 5),
+                'guest_flag_level' => $this->randomInt(0, 2),
                 'notes' => null,
                 'is_active' => true,
                 'created_at' => $createdAt,
@@ -354,8 +358,8 @@ class ProductionDataSeeder extends Seeder
                 },
                 'sort_order' => $cat['sort_order'],
                 'is_active' => true,
-                'created_at' => $this->sixMonthsAgo,
-                'updated_at' => $this->sixMonthsAgo,
+                'created_at' => $this->sevenYearsAgo,
+                'updated_at' => $this->sevenYearsAgo,
             ]);
         }
     }
@@ -535,8 +539,8 @@ class ProductionDataSeeder extends Seeder
                     $item[1] < 300 => 'premium',
                     default => 'signature',
                 }]),
-                'created_at' => $this->sixMonthsAgo,
-                'updated_at' => $this->sixMonthsAgo,
+                'created_at' => $this->sevenYearsAgo,
+                'updated_at' => $this->sevenYearsAgo,
             ]);
         }
     }
@@ -576,8 +580,8 @@ class ProductionDataSeeder extends Seeder
                 'payment_terms' => $this->randomFrom(['Net 15', 'Net 30', 'Net 45', 'COD', '7 Days']),
                 'rating' => $this->randomFloat(3.0, 5.0, 1),
                 'is_active' => true,
-                'created_at' => $this->sixMonthsAgo,
-                'updated_at' => $this->sixMonthsAgo,
+                'created_at' => $this->sevenYearsAgo,
+                'updated_at' => $this->sevenYearsAgo,
             ]);
         }
     }
@@ -706,8 +710,8 @@ class ProductionDataSeeder extends Seeder
                     default => 'Dry Storage',
                 },
                 'is_active' => true,
-                'created_at' => $this->sixMonthsAgo,
-                'updated_at' => $this->sixMonthsAgo,
+                'created_at' => $this->sevenYearsAgo,
+                'updated_at' => $this->sevenYearsAgo,
             ]);
         }
     }
@@ -849,8 +853,8 @@ class ProductionDataSeeder extends Seeder
                 'instructions' => null,
                 'yield_quantity' => 1,
                 'yield_unit' => 'serving',
-                'created_at' => $this->sixMonthsAgo,
-                'updated_at' => $this->sixMonthsAgo,
+                'created_at' => $this->sevenYearsAgo,
+                'updated_at' => $this->sevenYearsAgo,
             ]);
 
             foreach ($recipe[1] as $ingredientGroup) {
@@ -879,64 +883,49 @@ class ProductionDataSeeder extends Seeder
         }
     }
 
-    // ==================== FLOOR PLANS ====================
-
-    private function createFloorPlans(): void
-    {
-        foreach ([0, 1] as $outletIdx) {
-            $id = $this->uid('floorplan', $outletIdx + 1);
-            $this->ids['floor_plans'][] = $id;
-            $outletName = $outletIdx === 0 ? 'Main Branch' : 'SM Baliwag';
-            DB::table('floor_plans')->insert([
-                'id' => $id,
-                'name' => "{$outletName} Floor Plan",
-                'description' => "Dining floor layout for {$outletName}",
-                'sort_order' => $outletIdx,
-                'is_active' => true,
-                'created_at' => $this->sixMonthsAgo,
-                'updated_at' => $this->sixMonthsAgo,
-            ]);
-        }
-    }
-
     // ==================== TABLES ====================
 
     private function createTables(): void
     {
-        // Local cleanup: keep tables at 0. truncateRelevantTables() already clears the table.
-        return;
-        $outletTables = [
-            [1, 8, 12, 6, 2], // Outlet 0: 1x 8-seat, 8x 4-seat, 12x 2-seat, 6x 6-seat, 2x 10-seat
-            [1, 7, 10, 5, 2], // Outlet 1: slightly fewer
+        // Create 50 tables with varying capacities
+        $tableConfigs = [
+            // 10 tables for 2 people (intimate)
+            ['count' => 10, 'capacity' => 2, 'shape' => 'rectangle', 'width' => 60, 'height' => 60],
+            // 15 tables for 4 people (standard)
+            ['count' => 15, 'capacity' => 4, 'shape' => 'rectangle', 'width' => 80, 'height' => 80],
+            // 10 tables for 6 people (medium groups)
+            ['count' => 10, 'capacity' => 6, 'shape' => 'rectangle', 'width' => 100, 'height' => 100],
+            // 8 tables for 8 people (large groups)
+            ['count' => 8, 'capacity' => 8, 'shape' => 'round', 'width' => 120, 'height' => 120],
+            // 5 tables for 10 people (events)
+            ['count' => 5, 'capacity' => 10, 'shape' => 'round', 'width' => 140, 'height' => 140],
+            // 2 tables for 12 people (large events)
+            ['count' => 2, 'capacity' => 12, 'shape' => 'round', 'width' => 160, 'height' => 160],
         ];
 
-        $statuses = ['available', 'available', 'available', 'available', 'occupied', 'reserved', 'cleaning'];
+        $statuses = ['available', 'available', 'available', 'available', 'occupied', 'reserved', 'needs_cleaning'];
         $tableNum = 0;
 
-        foreach ([0, 1] as $outletIdx) {
-            $floorPlanId = $this->ids['floor_plans'][$outletIdx];
-            foreach ($outletTables[$outletIdx] as $capIdx => $count) {
-                $capacity = [8, 4, 2, 6, 10][$capIdx];
-                for ($j = 0; $j < $count; $j++) {
-                    $tableNum++;
-                    $id = $this->uid('table', $tableNum);
-                    $this->ids['tables'][] = $id;
-                    DB::table('tables')->insert([
-                        'id' => $id,
-                        'floor_plan_id' => $floorPlanId,
-                        'number' => "T{$tableNum}",
-                        'capacity' => $capacity,
-                        'status' => $this->randomFrom($statuses),
-                        'shape' => $capacity <= 4 ? 'rectangle' : ($capacity >= 8 ? 'round' : 'rectangle'),
-                        'pos_x' => $this->randomFloat(10, 600, 1),
-                        'pos_y' => $this->randomFloat(10, 500, 1),
-                        'width' => $capacity <= 2 ? 60 : ($capacity <= 4 ? 80 : 120),
-                        'height' => $capacity <= 2 ? 60 : ($capacity <= 4 ? 80 : 120),
-                        'is_active' => true,
-                        'created_at' => $this->sixMonthsAgo,
-                        'updated_at' => $this->sixMonthsAgo,
-                    ]);
-                }
+        foreach ($tableConfigs as $config) {
+            for ($j = 0; $j < $config['count']; $j++) {
+                $tableNum++;
+                $id = $this->uid('table', $tableNum);
+                $this->ids['tables'][] = $id;
+                DB::table('tables')->insert([
+                    'id' => $id,
+                    'number' => (string)$tableNum,
+                    'capacity' => $config['capacity'],
+                    'status' => $this->randomFrom($statuses),
+                    'shape' => $config['shape'],
+                    'pos_x' => $this->randomFloat(10, 600, 1),
+                    'pos_y' => $this->randomFloat(10, 500, 1),
+                    'width' => $config['width'],
+                    'height' => $config['height'],
+                    'is_wheelchair_accessible' => $config['capacity'] >= 6 ? (bool)mt_rand(0, 1) : false,
+                    'is_active' => true,
+                    'created_at' => $this->sevenYearsAgo,
+                    'updated_at' => $this->sevenYearsAgo,
+                ]);
             }
         }
     }
@@ -972,12 +961,12 @@ class ProductionDataSeeder extends Seeder
                 'max_discount_amount' => $disc[6],
                 'max_uses' => $disc[7],
                 'used_count' => $this->randomInt(5, 80),
-                'start_date' => $this->sixMonthsAgo,
-                'end_date' => (new Carbon($this->sixMonthsAgo))->addYear(),
+                'start_date' => $this->sevenYearsAgo,
+                'end_date' => (new Carbon($this->sevenYearsAgo))->addYear(),
                 'is_active' => true,
                 'description' => $disc[8],
-                'created_at' => $this->sixMonthsAgo,
-                'updated_at' => $this->sixMonthsAgo,
+                'created_at' => $this->sevenYearsAgo,
+                'updated_at' => $this->sevenYearsAgo,
             ]);
         }
     }
@@ -986,21 +975,25 @@ class ProductionDataSeeder extends Seeder
 
     private function createReservations(): void
     {
-        // Local cleanup: keep reservations at 0. truncateRelevantTables() already clears the table.
-        return;
         $statuses = ['confirmed', 'confirmed', 'confirmed', 'completed', 'completed', 'cancelled', 'no_show', 'pending'];
-        $sources = ['phone', 'phone', 'phone', 'walk_in', 'online', 'facebook'];
+        $sources = ['phone', 'phone', 'phone', 'walk_in', 'online', 'app'];
+        $eventTypes = ['Birthday', 'Anniversary', 'Corporate', 'Wedding', 'Holiday Party', 'Graduation', 'Baby Shower', 'Bridal Shower', 'Rehearsal Dinner', 'Other'];
         $guestFirstNames = ['Juan', 'Maria', 'Jose', 'Ana', 'Pedro', 'Rosa', 'Antonio', 'Luz', 'Carlo', 'Megan',
-            'Danny', 'Eliza', 'Ferdie', 'Grace', 'Henry', 'Iris', 'Joel', 'Karen', 'Levi', 'Nena'];
+            'Danny', 'Eliza', 'Ferdie', 'Grace', 'Henry', 'Iris', 'Joel', 'Karen', 'Levi', 'Nena',
+            'Carlos', 'Sofia', 'Miguel', 'Isabel', 'Rafael', 'Carmen', 'Andres', 'Lucia', 'Diego', 'Elena'];
 
-        for ($i = 1; $i <= 120; $i++) {
+        // ~3000 reservations over 7 years (~1.2 per day average)
+        for ($i = 1; $i <= 3000; $i++) {
             $id = $this->uid('reservation', $i);
             $customerId = $this->randomFrom($this->ids['customers']);
             $tableId = $this->randomFrom($this->ids['tables']);
-            $partySize = $this->randomFrom([2, 2, 2, 3, 4, 4, 4, 5, 6, 8]);
+            $partySize = $this->randomFrom([1, 2, 2, 2, 3, 4, 4, 4, 5, 6, 8, 10]);
             $status = $this->randomFrom($statuses);
+            $hasEvent = $partySize >= 6 && mt_rand(0, 4) === 0; // 20% chance for large parties
+            $eventType = $hasEvent ? $this->randomFrom($eventTypes) : null;
+            
             $resDate = $this->randomDate(
-                (new Carbon($this->sixMonthsAgo))->addDays(7),
+                (new Carbon($this->sevenYearsAgo))->addDays(7),
                 (new Carbon($this->now))->addDays(30)
             );
             $hour = $this->randomFrom([11, 11, 12, 13, 17, 17, 18, 18, 19, 19, 20, 17]);
@@ -1010,25 +1003,41 @@ class ProductionDataSeeder extends Seeder
             $table = DB::table('tables')->where('id', $tableId)->first();
             $tableCap = $table ? $table->capacity : 4;
 
+            $duration = $partySize <= 4 ? 180 : 240;
+            $endTime = (new Carbon("{$resDate} {$hour}:{$minute}"))->addMinutes($duration)->format('H:i');
+            
+            $requiresCard = $partySize >= 6 || in_array((new Carbon($resDate))->dayOfWeek, [5, 6]);
+            $requiresDeposit = $partySize >= 6;
+            $depositAmount = $requiresDeposit ? round($partySize * 30 * 0.5, 2) : 0;
+
             DB::table('reservations')->insert([
                 'id' => $id,
                 'customer_id' => $customerId,
                 'table_id' => ($tableCap >= $partySize) ? $tableId : null,
                 'reservation_number' => 'RES-' . str_pad((string)$i, 5, '0', STR_PAD_LEFT),
                 'guest_name' => $this->randomFrom($guestFirstNames) . ' ' . $this->randomFrom([
-                    'Santos', 'Cruz', 'Reyes', 'Garcia', 'Mendoza', 'Torres']),
+                    'Santos', 'Cruz', 'Reyes', 'Garcia', 'Mendoza', 'Torres', 'Lopez', 'Gonzalez']),
                 'guest_phone' => '0917' . sprintf('%07d', mt_rand(0, 9999999)),
                 'guest_email' => 'guest' . $i . '@email.com',
                 'party_size' => $partySize,
-                'reservation_date' => $resDatetime,
+                'reserved_party_size' => $partySize,
+                'reservation_date' => $resDate,
                 'reservation_time' => sprintf('%02d:%02d:00', $hour, $minute),
+                'end_time' => $endTime,
+                'duration_minutes' => $duration,
                 'status' => $status,
                 'source' => $this->randomFrom($sources),
                 'special_requests' => $this->randomFrom([null, null, null, 'Allergic to shrimp', 'Prefer near window',
-                    'Anniversary celebration', 'High chair needed', 'Birthday celebration']),
+                    'Anniversary celebration', 'High chair needed', 'Birthday celebration', 'Corporate event']),
+                'event_type' => $eventType,
+                'card_required' => $requiresCard,
+                'deposit_required' => $requiresDeposit,
+                'deposit_amount' => $depositAmount,
+                'deposit_paid' => $requiresDeposit && mt_rand(0, 1) === 1,
+                'card_on_file' => $requiresCard && mt_rand(0, 1) === 1,
                 'cancellation_reason' => $status === 'cancelled' ? $this->randomFrom([
                     'Change of plans', 'Weather', 'Emergency', 'Duplicate booking']) : null,
-                'created_at' => $createdAt = $this->randomTimestamp($this->sixMonthsAgo, new Carbon($resDatetime)),
+                'created_at' => $createdAt = $this->randomTimestamp($this->sevenYearsAgo, new Carbon($resDatetime)),
                 'updated_at' => $createdAt,
             ]);
         }
@@ -1038,15 +1047,12 @@ class ProductionDataSeeder extends Seeder
 
     private function createOrders(): void
     {
-        // Local cleanup: keep orders (and invoices/payments/status history via this method) at 0.
-        return;
         $orderTypes = ['dine_in', 'dine_in', 'dine_in', 'dine_in', 'takeaway', 'delivery'];
         $itemStatuses = ['pending', 'preparing', 'preparing', 'ready', 'served', 'served', 'cancelled'];
         $hours = [7,8,8,9,10,11,11,12,12,13,13,14,15,17,17,18,18,19,19,20,20,21,21,22,22,23];
 
-        $orderData = [];
-
-        for ($i = 1; $i <= 1000; $i++) {
+        // ~10,000 orders over 7 years (~4 per day average)
+        for ($i = 1; $i <= 10000; $i++) {
             $orderId = $this->uid('order', $i);
             $customerId = $this->randomFrom($this->ids['customers']);
             $tableId = $this->randomFrom($this->ids['tables']);
@@ -1056,7 +1062,7 @@ class ProductionDataSeeder extends Seeder
 
             $numItems = $this->randomFrom([1, 1, 2, 2, 2, 3, 3, 3, 4, 4, 5, 6]);
             $orderDate = $this->randomTimestamp(
-                $this->sixMonthsAgo,
+                $this->sevenYearsAgo,
                 (new Carbon($this->now))->subDays(1)
             );
             $orderDatetime = (new Carbon($orderDate))->setTime($hour, $minute, 0)->format('Y-m-d H:i:s');
@@ -1307,8 +1313,8 @@ class ProductionDataSeeder extends Seeder
                 'name' => $shift[0],
                 'start_time' => $shift[1],
                 'end_time' => $shift[2],
-                'created_at' => $this->sixMonthsAgo,
-                'updated_at' => $this->sixMonthsAgo,
+                'created_at' => $this->sevenYearsAgo,
+                'updated_at' => $this->sevenYearsAgo,
             ]);
         }
     }
@@ -1322,7 +1328,7 @@ class ProductionDataSeeder extends Seeder
             $staffId = $this->randomFrom($this->ids['staff_profiles']);
             $shiftId = $this->randomFrom($this->ids['staff_shifts']);
             $scheduleDate = $this->randomDate(
-                $this->sixMonthsAgo,
+                $this->sevenYearsAgo,
                 (new Carbon($this->now))->addMonth()
             );
             $status = $this->randomFrom(['scheduled', 'scheduled', 'scheduled', 'completed', 'absent', 'cancelled']);
@@ -1334,7 +1340,7 @@ class ProductionDataSeeder extends Seeder
                 'date' => $scheduleDate,
                 'status' => $status,
                 'notes' => $status === 'absent' ? $this->randomFrom(['Sick', 'Emergency', 'Personal leave']) : null,
-                'created_at' => $createdAt = $this->randomTimestamp($this->sixMonthsAgo, new Carbon($scheduleDate)),
+                'created_at' => $createdAt = $this->randomTimestamp($this->sevenYearsAgo, new Carbon($scheduleDate)),
                 'updated_at' => $createdAt,
             ]);
         }
@@ -1350,8 +1356,8 @@ class ProductionDataSeeder extends Seeder
             $poId = $this->uid('purchaseorder', $i);
             $supplierId = $this->randomFrom($this->ids['suppliers']);
             $status = $this->randomFrom($poStatuses);
-            $expectedDate = $status === 'delivered' ? null : $this->randomDate($this->sixMonthsAgo, (new Carbon($this->now))->addMonth());
-            $receivedAt = $status === 'delivered' ? $this->randomTimestamp($this->sixMonthsAgo) : null;
+            $expectedDate = $status === 'delivered' ? null : $this->randomDate($this->sevenYearsAgo, (new Carbon($this->now))->addMonth());
+            $receivedAt = $status === 'delivered' ? $this->randomTimestamp($this->sevenYearsAgo) : null;
 
             $numItems = $this->randomInt(1, 8);
             $totalAmount = 0;
@@ -1389,7 +1395,7 @@ class ProductionDataSeeder extends Seeder
                 'expected_date' => $expectedDate,
                 'received_at' => $receivedAt,
                 'created_by' => $this->randomFrom(array_slice($this->ids['users'], 1)),
-                'created_at' => $createdAt = $this->randomTimestamp($this->sixMonthsAgo),
+                'created_at' => $createdAt = $this->randomTimestamp($this->sevenYearsAgo),
                 'updated_at' => $createdAt,
             ]);
 
@@ -1431,8 +1437,8 @@ class ProductionDataSeeder extends Seeder
                 'reference_id' => null,
                 'notes' => $this->randomFrom($reasons[$type]),
                 'created_by' => $this->randomFrom(array_slice($this->ids['users'], 1)),
-                'created_at' => $this->randomTimestamp($this->sixMonthsAgo),
-                'updated_at' => $this->randomTimestamp($this->sixMonthsAgo),
+                'created_at' => $this->randomTimestamp($this->sevenYearsAgo),
+                'updated_at' => $this->randomTimestamp($this->sevenYearsAgo),
             ]);
 
             // Update ingredient stock
@@ -1476,7 +1482,7 @@ class ProductionDataSeeder extends Seeder
                 'new_values' => json_encode(['name' => $actionDesc]),
                 'ip_address' => mt_rand(10, 200) . '.' . mt_rand(0, 255) . '.' . mt_rand(0, 255) . '.' . mt_rand(1, 254),
                 'user_agent' => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-                'created_at' => $createdAt = $this->randomTimestamp($this->sixMonthsAgo),
+                'created_at' => $createdAt = $this->randomTimestamp($this->sevenYearsAgo),
                 'updated_at' => $createdAt,
             ]);
         }

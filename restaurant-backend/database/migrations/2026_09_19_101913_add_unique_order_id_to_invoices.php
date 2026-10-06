@@ -9,12 +9,12 @@ return new class extends Migration
 {
     public function up(): void
     {
-        // First, check for and resolve any duplicate order_id entries
-        // Keep the first invoice, soft-delete the rest
+        // First, check for and resolve any duplicate order_id entries.
+        // Keep the first invoice, soft-delete the rest.
         $duplicates = DB::table('invoices')
             ->select('order_id', DB::raw('count(*) as cnt'))
             ->groupBy('order_id')
-            ->having('cnt', '>', 1)
+            ->havingRaw('COUNT(*) > 1')
             ->pluck('order_id');
 
         foreach ($duplicates as $orderId) {
@@ -23,8 +23,7 @@ return new class extends Migration
                 ->orderBy('created_at')
                 ->get();
 
-            // Keep the first, soft-delete the rest
-            $keepId = $invoices->first()->id;
+            // Keep the first, soft-delete the rest.
             $deleteIds = $invoices->skip(1)->pluck('id');
 
             if ($deleteIds->isNotEmpty()) {
@@ -34,7 +33,7 @@ return new class extends Migration
             }
         }
 
-        // Now add the unique constraint
+        // Now add the unique constraint.
         Schema::table('invoices', function (Blueprint $table) {
             $table->unique('order_id');
         });

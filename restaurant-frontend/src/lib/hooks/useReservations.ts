@@ -1,5 +1,3 @@
-"use client";
-
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import api from "@/lib/api/client";
 import { normalizePaginated } from "@/lib/utils/api";
@@ -10,6 +8,9 @@ import type {
   Reservation,
   ReservationFormData,
   Table,
+  TableOccupancyByDate,
+  ReservationPolicy,
+  AvailabilityCheckResult,
 } from "@/lib/types";
 
 export function useReservations(params?: QueryParams) {
@@ -71,10 +72,8 @@ export function useReservations(params?: QueryParams) {
   });
 
   const checkIn = useMutation({
-    mutationFn: (id: string) =>
-      api.patch<ApiResponse<Reservation>>(`/reservations/${id}/status`, {
-        status: "seated",
-      }),
+    mutationFn: ({ id, actual_party_size }: { id: string; actual_party_size: number }) =>
+      api.post<ApiResponse<Reservation>>(`/reservations/${id}/check-in`, { actual_party_size }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["reservations"] });
       queryClient.invalidateQueries({ queryKey: ["tables"] });
@@ -103,6 +102,15 @@ export function useReservations(params?: QueryParams) {
     },
   });
 
+  const processNoShow = useMutation({
+    mutationFn: (id: string) =>
+      api.post<ApiResponse<Reservation>>(`/reservations/${id}/no-show`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["reservations"] });
+      queryClient.invalidateQueries({ queryKey: ["tables"] });
+    },
+  });
+
   const archive = useMutation({
     mutationFn: (id: string) =>
       api.patch<ApiResponse<Reservation>>(`/reservations/${id}/archive`),
@@ -111,7 +119,7 @@ export function useReservations(params?: QueryParams) {
     },
   });
 
-  return { list, availableTables, create, update, cancel, checkIn, complete, confirm, archive };
+  return { list, availableTables, create, update, cancel, checkIn, complete, confirm, processNoShow, archive };
 }
 
 export function useReservation(id: string) {
@@ -138,11 +146,32 @@ export function useReservationCalendar(params: {
     queryKey: ["reservations", "calendar", params],
     queryFn: () =>
       api
-        .get<ApiResponse<{ items: Reservation[] }>>("/reservations/calendar", {
+        .get<ApiResponse<{ items: Reservation[]; table_occupancy: TableOccupancyByDate }>>("/reservations/calendar", {
           params,
         })
-        .then((res) => res.data.data?.items ?? []),
+        .then((res) => ({
+          items: res.data.data?.items ?? [],
+          table_occupancy: res.data.data?.table_occupancy ?? {},
+        })),
     enabled: !!params.start_date && !!params.end_date,
     staleTime: 60_000,
+  });
+}
+
+export function useReservationPolicy() {
+  return useQuery({
+    queryKey: ["reservations", "policy"],
+    queryFn: () =>
+      api
+        .get<ApiResponse<ReservationPolicy>>("/reservations/policy")
+        .then((res) => res.data.data),
+    staleTime: 60_000,
+  });
+}
+
+export function useCheckAvailability() {
+  return useMutation({
+    mutationFn: (data: { reservation_date: string; reservation_time: string; party_size: number }) =>
+      api.post<ApiResponse<AvailabilityCheckResult>>("/reservations/check-availability", data),
   });
 }

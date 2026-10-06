@@ -27,8 +27,17 @@ export interface MenuItem {
   name: string;
   description?: string;
   price: number;
+  cost_price?: number;
   image_url?: string;
+  image_data?: string;
+  image_mime_type?: string;
+  image_data_uri?: string;
+  effective_image_url?: string;
   is_available: boolean;
+  is_featured?: boolean;
+  prep_time_minutes?: number;
+  tags?: string[];
+  sku?: string;
   created_at: string;
   updated_at: string;
 }
@@ -38,6 +47,13 @@ export interface MenuItemFormData {
   name: string;
   description?: string;
   price: number;
+  cost_price?: number;
   image_url?: string;
+  image_data?: string;
+  image_mime_type?: string;
   is_available: boolean;
+  is_featured?: boolean;
+  prep_time_minutes?: number;
+  tags?: string[];
+  sku?: string;
 }

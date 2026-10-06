@@ -2,7 +2,6 @@
 "use client";
 
 import { createContext, useContext, useEffect, useState, useCallback } from "react";
-import { ThemeProvider as NextThemesProvider } from "next-themes";
 import { DEV_PER_TAB_AUTH } from "@/lib/utils/constants";
 
 const DEV_THEME_KEY = "rms_dev_theme";
@@ -114,21 +113,5 @@ function ThemeProviderInner({ children }: { children: React.ReactNode }) {
 }
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
-  if (DEV_PER_TAB_AUTH) {
-    return <ThemeProviderInner>{children}</ThemeProviderInner>;
-  }
-  return (
-    <NextThemesProvider
-      attribute="class"
-      defaultTheme="system"
-      enableSystem
-      disableTransitionOnChange
-    >
-      {children}
-    </NextThemesProvider>
-  );
-}
-
-export function ProductionThemeProvider({ children }: { children: React.ReactNode }) {
-  return <ThemeProvider>{children}</ThemeProvider>;
+  return <ThemeProviderInner>{children}</ThemeProviderInner>;
 }

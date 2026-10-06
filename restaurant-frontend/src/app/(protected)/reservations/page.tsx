@@ -91,10 +91,11 @@ export default function ReservationsPage() {
   }, [calendarMonth]);
 
   const {
-    data: calendarData = [],
+    data: calendarData = { items: [], table_occupancy: {} },
     isLoading: calendarLoading,
   } = useReservationCalendar(calRange);
-  const calendarReservations = calendarData;
+  const calendarReservations = calendarData.items;
+  const calendarTableOccupancy = calendarData.table_occupancy;
 
   // Filter out completed and cancelled from the "active" view,
   // but include them when status filter is explicitly set
@@ -129,7 +130,7 @@ export default function ReservationsPage() {
 
   function handleCheckInConfirm() {
     if (!checkInTarget) return;
-    checkIn.mutate(checkInTarget.id, {
+    checkIn.mutate({ id: checkInTarget.id, actual_party_size: checkInTarget.party_size }, {
       onSuccess: () => {
         toast.success(
           `Reservation ${checkInTarget.reservation_number} checked in`
@@ -285,10 +286,12 @@ export default function ReservationsPage() {
             <TabsContent value="calendar" className="mt-4">
               <CalendarView
                 reservations={calendarReservations}
+                tableOccupancy={calendarTableOccupancy}
                 selectedDate={selectedDate}
                 onDateSelect={setSelectedDate}
                 onMonthChange={setCalendarMonth}
                 isLoading={calendarLoading}
+                size="default"
               />
             </TabsContent>
           </Tabs>

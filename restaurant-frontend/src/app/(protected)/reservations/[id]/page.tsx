@@ -37,7 +37,7 @@ export default function ReservationDetailPage({
 
   function handleCheckIn() {
     if (!reservation) return;
-    checkIn.mutate(reservation.id, {
+    checkIn.mutate({ id: reservation.id, actual_party_size: reservation.party_size }, {
       onSuccess: () => {
         toast.success(`Reservation ${reservation.reservation_number} checked in`);
         setShowCheckInDialog(false);

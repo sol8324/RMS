@@ -9,6 +9,7 @@ class Customer extends BaseModel
     protected $fillable = [
         'name', 'email', 'phone', 'address', 'birthday', 'dietary_restrictions', 'customer_type',
         'loyalty_points', 'total_spent', 'visit_count', 'notes', 'is_active',
+        'no_show_counter', 'partial_show_counter', 'guest_flag_level',
     ];
 
     protected function casts(): array
@@ -18,6 +19,9 @@ class Customer extends BaseModel
             'total_spent' => 'decimal:2',
             'visit_count' => 'integer',
             'is_active' => 'boolean',
+            'no_show_counter' => 'integer',
+            'partial_show_counter' => 'integer',
+            'guest_flag_level' => 'integer',
         ];
     }
 

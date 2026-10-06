@@ -188,13 +188,15 @@ class CoreCustomerReservationTest extends TestCase
             'reservation_time' => '18:00',
         ])->assertCreated();
 
+        // Party size 2 = 3 hour duration (180 min), so first ends at 21:00
+        // Second at 21:00 should not overlap
         $this->actingAs($this->admin)->postJson('/api/v1/reservations', [
             'guest_name' => 'Second',
             'guest_phone' => '09170000002',
             'table_id' => $table->id,
             'party_size' => 2,
             'reservation_date' => now()->addDay()->toDateString(),
-            'reservation_time' => '19:30',
+            'reservation_time' => '21:00',
         ])->assertCreated();
     }
 

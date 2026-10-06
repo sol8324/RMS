@@ -5,6 +5,8 @@ export {
   useReservations,
   useReservation,
   useReservationCalendar,
+  useReservationPolicy,
+  useCheckAvailability,
 } from "./useReservations";
 export { useMenuCategories, useMenuItems } from "./useMenu";
 export { useOrders, useOrder, useUnpaidOrders } from "./useOrders";

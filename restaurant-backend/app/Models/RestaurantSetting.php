@@ -40,6 +40,15 @@ class RestaurantSetting extends BaseModel
         'auto_cancel_timeout',
         'allow_negative_inventory',
         'low_stock_threshold',
+        // Reservation policy settings
+        'reservation_card_threshold',
+        'reservation_no_show_fee',
+        'reservation_no_show_flag_threshold',
+        'reservation_deposit_percentage',
+        'reservation_cancellation_window_minutes',
+        'reservation_regular_duration_minutes',
+        'reservation_large_duration_minutes',
+        'reservation_weekend_days',
     ];
 
     protected $casts = [
@@ -51,6 +60,14 @@ class RestaurantSetting extends BaseModel
         'default_service_charge' => 'decimal:2',
         'service_charge_enabled' => 'boolean',
         'allow_negative_inventory' => 'boolean',
+        'reservation_card_threshold' => 'integer',
+        'reservation_no_show_fee' => 'decimal:2',
+        'reservation_no_show_flag_threshold' => 'integer',
+        'reservation_deposit_percentage' => 'decimal:2',
+        'reservation_cancellation_window_minutes' => 'integer',
+        'reservation_regular_duration_minutes' => 'integer',
+        'reservation_large_duration_minutes' => 'integer',
+        'reservation_weekend_days' => 'array',
     ];
 
     public function getTable(): string
