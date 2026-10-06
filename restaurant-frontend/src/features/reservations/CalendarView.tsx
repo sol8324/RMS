@@ -96,7 +96,16 @@ export function CalendarView({
   // Size-based dimensions
   const sizeConfig = {
     compact: {
-      dayHeight: "h-[36px] sm:h-[38px] lg:min-h-[60px] lg:h-[60px]",
+      dayHeight: "h-[34px] sm:h-[36px] lg:min-h-[56px] lg:h-[56px]",
+      dayNumberSize: "h-4 w-4 text-[10px]",
+      fontSize: "text-[10px]",
+      iconSize: "h-2 w-2",
+      badgeSize: "text-[8px]",
+      headerGap: "gap-1",
+      cellPadding: "p-0.5",
+    },
+    default: {
+      dayHeight: "h-[42px] sm:h-[44px] lg:min-h-[76px] lg:h-[76px]",
       dayNumberSize: "h-5 w-5 text-xs",
       fontSize: "text-xs",
       iconSize: "h-2.5 w-2.5",
@@ -104,23 +113,14 @@ export function CalendarView({
       headerGap: "gap-1",
       cellPadding: "p-1",
     },
-    default: {
-      dayHeight: "h-[46px] sm:h-[48px] lg:min-h-[84px] lg:h-[84px]",
+    large: {
+      dayHeight: "h-[52px] sm:h-[54px] lg:min-h-[92px] lg:h-[92px]",
       dayNumberSize: "h-6 w-6 text-sm",
       fontSize: "text-sm",
       iconSize: "h-3 w-3",
-      badgeSize: "text-[11px]",
+      badgeSize: "text-[10px]",
       headerGap: "gap-1.5",
-      cellPadding: "p-2",
-    },
-    large: {
-      dayHeight: "h-[56px] sm:h-[58px] lg:min-h-[100px] lg:h-[100px]",
-      dayNumberSize: "h-7 w-7 text-base",
-      fontSize: "text-base",
-      iconSize: "h-3.5 w-3.5",
-      badgeSize: "text-[12px]",
-      headerGap: "gap-2",
-      cellPadding: "p-2.5",
+      cellPadding: "p-1.5",
     },
   };
 
@@ -317,31 +317,33 @@ return (
                   >
                     {day.date.getDate()}
                   </span>
-                  <div className="flex flex-col items-start gap-0.5 min-h-0 flex-1 overflow-hidden w-full">
+                  <div className="flex flex-col items-start gap-0.5 min-h-0 flex-1 overflow-hidden w-full pt-0.5">
                     {count > 0 && (
-                      <span className={cn("inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5 font-medium leading-none flex-shrink-0 w-auto truncate", s.badgeSize, isSelected ? "bg-primary text-primary-foreground border-primary" : "bg-primary/10 text-primary border-primary/20")}>
+                      <span className={cn("inline-flex items-center gap-0.5 rounded-full border px-1 py-0.5 font-medium leading-none flex-shrink-0 w-auto truncate", s.badgeSize, isSelected ? "bg-primary text-primary-foreground border-primary" : "bg-primary/10 text-primary border-primary/20")}>
                         <CalendarClock className={cn("hidden sm:inline", s.iconSize)} />
-                        <span className="hidden sm:inline">{count} {count === 1 ? "reservation" : "reservations"}</span>
+                        <span className="hidden sm:inline">{count}</span>
                         <span className="sm:hidden">{count}</span>
                       </span>
                     )}
                     {isEventDay && eventNames.length > 0 && (
-                      <span className="inline-flex items-center gap-1 font-medium text-violet-600 dark:text-violet-400 flex-shrink-0 truncate" style={{ fontSize: s.badgeSize }}>
+                      <span className="inline-flex items-center gap-0.5 font-medium text-violet-600 dark:text-violet-400 flex-shrink-0 truncate" style={{ fontSize: s.badgeSize }}>
                         <CalendarDays className={cn(s.iconSize)} />
-                        <span className="hidden sm:inline">Event: {eventNames.join(", ")}</span>
-                        <span className="sm:hidden">Event</span>
+                        <span className="hidden sm:inline">Event</span>
+                        <span className="sm:hidden">E</span>
                       </span>
                     )}
                     {isFull && !isEventDay && (
-                      <span className="inline-flex items-center gap-1 font-medium text-red-600 dark:text-red-400 flex-shrink-0" style={{ fontSize: s.badgeSize }}>
+                      <span className="inline-flex items-center gap-0.5 font-medium text-red-600 dark:text-red-400 flex-shrink-0" style={{ fontSize: s.badgeSize }}>
                         <AlertCircle className={cn(s.iconSize)} />
                         <span className="hidden sm:inline">Full</span>
+                        <span className="sm:hidden">F</span>
                       </span>
                     )}
                     {isLimited && !isFull && !isEventDay && (
-                      <span className="inline-flex items-center gap-1 font-medium text-amber-600 dark:text-amber-400 flex-shrink-0" style={{ fontSize: s.badgeSize }}>
+                      <span className="inline-flex items-center gap-0.5 font-medium text-amber-600 dark:text-amber-400 flex-shrink-0" style={{ fontSize: s.badgeSize }}>
                         <AlertCircle className={cn(s.iconSize)} />
                         <span className="hidden sm:inline">Limited</span>
+                        <span className="sm:hidden">L</span>
                       </span>
                     )}
                   </div>
