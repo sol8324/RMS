@@ -658,6 +658,12 @@ export function ReservationForm({
           {touched.party_size && errors.party_size && (
             <p className="text-xs text-destructive">{errors.party_size}</p>
           )}
+          {formData.party_size && (!formData.reservation_date || !formData.reservation_time) && (
+            <p className="text-xs text-amber-600 dark:text-amber-400 flex items-center gap-1">
+              <Info className="h-3 w-3" />
+              Select Date & Time above to auto-fill the best available table
+            </p>
+          )}
           {formData.party_size > 12 && (
             <p className="text-xs text-blue-600 dark:text-blue-400 flex items-center gap-1">
               <Info className="h-3 w-3" />
