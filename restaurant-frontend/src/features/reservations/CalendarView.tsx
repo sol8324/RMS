@@ -252,11 +252,11 @@ export function CalendarView({
             month: "w-full",
             month_caption: "hidden",
             nav: "hidden",
-            month_grid: "w-full border-collapse",
-            weekdays: "flex w-full border-b pb-2 mb-1",
-            weekday: "flex-1 text-center text-xs font-medium text-muted-foreground uppercase tracking-wide",
-            week: "flex w-full gap-1",
-            day: "flex-1 relative p-0.5 h-auto",
+            month_grid: "w-full",
+            weekdays: "grid grid-cols-7 gap-1 w-full border-b pb-2 mb-1",
+            weekday: "text-center text-xs font-medium text-muted-foreground uppercase tracking-wide py-1",
+            week: "grid grid-cols-7 gap-1 w-full",
+            day: "relative p-0.5 min-h-0",
           }}
           components={{
             DayButton: ({ day, modifiers, ...props }) => {
@@ -284,7 +284,7 @@ return (
                 <button
                   {...props}
                   className={cn(
-                    "relative flex flex-col items-start justify-start w-full rounded-lg border transition-colors overflow-hidden",
+                    "relative flex flex-col items-start justify-start w-full h-full rounded-lg border transition-colors overflow-hidden",
                     s.dayHeight,
                     s.cellPadding,
                     s.fontSize,
