@@ -328,8 +328,8 @@ return (
                     {isEventDay && eventNames.length > 0 && (
                       <span className="inline-flex items-center gap-0.5 font-medium text-violet-600 dark:text-violet-400 flex-shrink-0 truncate" style={{ fontSize: s.badgeSize }}>
                         <CalendarDays className={cn(s.iconSize)} />
-                        <span className="hidden sm:inline">Event</span>
-                        <span className="sm:hidden">E</span>
+                        <span className="hidden sm:inline">{eventNames.join(", ")}</span>
+                        <span className="sm:hidden">{eventNames[0]}</span>
                       </span>
                     )}
                     {isFull && !isEventDay && (
