@@ -280,11 +280,11 @@ export function CalendarView({
               // Get event names for this day
               const eventNames = reservationsByDate[key]?.filter((r) => r.event_type).map((r) => r.event_type) ?? [];
 
-              return (
+return (
                 <button
                   {...props}
                   className={cn(
-                    "relative flex flex-col items-start justify-start w-full rounded-lg border transition-colors",
+                    "relative flex flex-col items-start justify-start w-full rounded-lg border transition-colors overflow-hidden",
                     s.dayHeight,
                     s.cellPadding,
                     s.fontSize,
@@ -304,7 +304,7 @@ export function CalendarView({
                 >
                   <span
                     className={cn(
-                      "flex items-center justify-center rounded-full font-medium leading-none",
+                      "flex items-center justify-center rounded-full font-medium leading-none flex-shrink-0",
                       s.dayNumberSize,
                       isToday && !isSelected && "bg-primary text-primary-foreground",
                       isToday && isSelected && "bg-primary text-primary-foreground",
@@ -317,35 +317,37 @@ export function CalendarView({
                   >
                     {day.date.getDate()}
                   </span>
-                  {count > 0 && (
-                    <span className={cn("mt-auto inline-flex items-center gap-1 rounded-full border px-2 py-0.5 font-medium leading-none", s.badgeSize, isSelected ? "bg-primary text-primary-foreground border-primary" : "bg-primary/10 text-primary border-primary/20")}>
-                      <CalendarClock className={cn("hidden sm:inline", s.iconSize)} />
-                      <span className="hidden sm:inline">{count} {count === 1 ? "reservation" : "reservations"}</span>
-                      <span className="sm:hidden">{count}</span>
-                    </span>
-                  )}
-                  {isEventDay && eventNames.length > 0 && (
-                    <span className="mt-auto inline-flex items-center gap-1 font-medium text-violet-600 dark:text-violet-400" style={{ fontSize: s.badgeSize }}>
-                      <CalendarDays className={cn(s.iconSize)} />
-                      <span className="hidden sm:inline">Event: {eventNames.join(", ")}</span>
-                      <span className="sm:hidden">Event</span>
-                    </span>
-                  )}
-                  {isFull && !isEventDay && (
-                    <span className="mt-auto inline-flex items-center gap-1 font-medium text-red-600 dark:text-red-400" style={{ fontSize: s.badgeSize }}>
-                      <AlertCircle className={cn(s.iconSize)} />
-                      <span className="hidden sm:inline">Full</span>
-                    </span>
-                  )}
-                  {isLimited && !isFull && !isEventDay && (
-                    <span className="mt-auto inline-flex items-center gap-1 font-medium text-amber-600 dark:text-amber-400" style={{ fontSize: s.badgeSize }}>
-                      <AlertCircle className={cn(s.iconSize)} />
-                      <span className="hidden sm:inline">Limited</span>
-                    </span>
-                  )}
-                </button>
-              );
-            },
+                  <div className="flex flex-col items-start gap-0.5 min-h-0 flex-1 overflow-hidden w-full">
+                    {count > 0 && (
+                      <span className={cn("inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5 font-medium leading-none flex-shrink-0 w-auto truncate", s.badgeSize, isSelected ? "bg-primary text-primary-foreground border-primary" : "bg-primary/10 text-primary border-primary/20")}>
+                        <CalendarClock className={cn("hidden sm:inline", s.iconSize)} />
+                        <span className="hidden sm:inline">{count} {count === 1 ? "reservation" : "reservations"}</span>
+                        <span className="sm:hidden">{count}</span>
+                      </span>
+                    )}
+                    {isEventDay && eventNames.length > 0 && (
+                      <span className="inline-flex items-center gap-1 font-medium text-violet-600 dark:text-violet-400 flex-shrink-0 truncate" style={{ fontSize: s.badgeSize }}>
+                        <CalendarDays className={cn(s.iconSize)} />
+                        <span className="hidden sm:inline">Event: {eventNames.join(", ")}</span>
+                        <span className="sm:hidden">Event</span>
+                      </span>
+                    )}
+                    {isFull && !isEventDay && (
+                      <span className="inline-flex items-center gap-1 font-medium text-red-600 dark:text-red-400 flex-shrink-0" style={{ fontSize: s.badgeSize }}>
+                        <AlertCircle className={cn(s.iconSize)} />
+                        <span className="hidden sm:inline">Full</span>
+                      </span>
+                    )}
+                    {isLimited && !isFull && !isEventDay && (
+                      <span className="inline-flex items-center gap-1 font-medium text-amber-600 dark:text-amber-400 flex-shrink-0" style={{ fontSize: s.badgeSize }}>
+                        <AlertCircle className={cn(s.iconSize)} />
+                        <span className="hidden sm:inline">Limited</span>
+                      </span>
+                    )}
+                  </div>
+                  </button>
+                )
+              },
           }}
         />
           <div className="flex flex-wrap items-center gap-4 pt-2 text-muted-foreground border-t" style={{ fontSize: s.badgeSize }}>
