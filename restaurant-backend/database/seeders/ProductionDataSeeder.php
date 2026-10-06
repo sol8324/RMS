@@ -281,8 +281,8 @@ class ProductionDataSeeder extends Seeder
 
         $cities = ['Caloocan City', 'Baliwag', 'Manila', 'Quezon City', 'Mandaluyong', 'Makati', 'Pasig', 'Valenzuela', 'Malolos'];
 
-        // ~1,500 customers over 7 years
-        for ($i = 1; $i <= 1500; $i++) {
+        // ~3000 customers over 7 years (~1.2 per day average)
+        for ($i = 1; $i <= 3000; $i++) {
             $id = $this->uid('customer', $i);
             $this->ids['customers'][] = $id;
             $firstName = $this->randomFrom($firstNames);
@@ -982,8 +982,8 @@ class ProductionDataSeeder extends Seeder
             'Danny', 'Eliza', 'Ferdie', 'Grace', 'Henry', 'Iris', 'Joel', 'Karen', 'Levi', 'Nena',
             'Carlos', 'Sofia', 'Miguel', 'Isabel', 'Rafael', 'Carmen', 'Andres', 'Lucia', 'Diego', 'Elena'];
 
-        // ~3000 reservations over 7 years (~1.2 per day average)
-        for ($i = 1; $i <= 3000; $i++) {
+        // ~10,000 reservations over 7 years (~4 per day average)
+        for ($i = 1; $i <= 10000; $i++) {
             $id = $this->uid('reservation', $i);
             $customerId = $this->randomFrom($this->ids['customers']);
             $tableId = $this->randomFrom($this->ids['tables']);
@@ -1051,8 +1051,8 @@ class ProductionDataSeeder extends Seeder
         $itemStatuses = ['pending', 'preparing', 'preparing', 'ready', 'served', 'served', 'cancelled'];
         $hours = [7,8,8,9,10,11,11,12,12,13,13,14,15,17,17,18,18,19,19,20,20,21,21,22,22,23];
 
-        // ~10,000 orders over 7 years (~4 per day average)
-        for ($i = 1; $i <= 10000; $i++) {
+        // ~30,000 orders over 7 years (~12 per day average)
+        for ($i = 1; $i <= 30000; $i++) {
             $orderId = $this->uid('order', $i);
             $customerId = $this->randomFrom($this->ids['customers']);
             $tableId = $this->randomFrom($this->ids['tables']);
@@ -1352,7 +1352,8 @@ class ProductionDataSeeder extends Seeder
     {
         $poStatuses = ['draft', 'pending', 'approved', 'delivered', 'cancelled'];
 
-        for ($i = 1; $i <= 200; $i++) {
+        // ~1,500 purchase orders over 7 years
+        for ($i = 1; $i <= 1500; $i++) {
             $poId = $this->uid('purchaseorder', $i);
             $supplierId = $this->randomFrom($this->ids['suppliers']);
             $status = $this->randomFrom($poStatuses);
@@ -1417,7 +1418,8 @@ class ProductionDataSeeder extends Seeder
             'wastage' => ['Spoilage', 'Expired stock', 'Damaged packaging', 'Prep waste'],
         ];
 
-        for ($i = 1; $i <= 500; $i++) {
+        // ~5,000 stock movements over 7 years
+        for ($i = 1; $i <= 5000; $i++) {
             $ingId = $this->randomFrom($this->ids['ingredients']);
             $ingredient = DB::table('ingredients')->where('id', $ingId)->first();
             if (!$ingredient) continue;
@@ -1467,7 +1469,8 @@ class ProductionDataSeeder extends Seeder
             'App\Models\Supplier' => ['Supplier created', 'Supplier updated'],
         ];
 
-        for ($i = 1; $i <= 5000; $i++) {
+        // ~15,000 audit logs over 7 years
+        for ($i = 1; $i <= 15000; $i++) {
             $modelType = $this->randomFrom(array_keys($models));
             $actionDesc = $this->randomFrom($models[$modelType]);
             $action = $this->randomFrom($actions);
