@@ -1,5 +1,6 @@
 "use client";
 
+import { cn } from "@/lib/utils";
 import { useState, useEffect, useEffectEvent, useRef, useMemo } from "react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -15,7 +16,7 @@ import {
 import { Card, CardContent } from "@/components/ui/card";
 import { Clock, CreditCard, AlertCircle, Info, Calendar as CalendarIcon, Users, AlertTriangle, Bell, X, CheckCircle } from "lucide-react";
 import { LoadingSpinner } from "@/components/shared";
-import { useReservations, useCheckAvailability, useReservationPolicy } from "@/lib/hooks";
+import { useReservations, useCheckAvailability, useReservationPolicy, useTimeSlots } from "@/lib/hooks";
 import { useCustomers } from "@/lib/hooks";
 import { useTables } from "@/lib/hooks";
 import type {
@@ -25,6 +26,8 @@ import type {
   EventType,
   ReservationPolicy,
   AvailabilityCheckResult,
+  TimeSlot,
+  TimeSlotsResult,
 } from "@/lib/types";
 
 interface ReservationFormProps {
@@ -99,6 +102,13 @@ export function ReservationForm({
   // Policy and availability checking
   const { data: policy } = useReservationPolicy();
   const checkAvailability = useCheckAvailability();
+  
+  // Fetch time slots for the selected date
+  const { data: timeSlotsData } = useTimeSlots({
+    reservation_date: formData.reservation_date,
+    party_size: formData.party_size,
+    exclude_reservation_id: initialData?.id,
+  });
 
   // Minimum date is today
   const minDate = new Date().toISOString().split("T")[0];
@@ -479,41 +489,99 @@ export function ReservationForm({
 
         <div className="space-y-2">
           <Label htmlFor="res-time">Start Time *</Label>
-          <Input
-            id="res-time"
-            type="time"
-            value={formData.reservation_time}
-            onChange={(e) => {
-              const newStartTime = e.target.value;
-              setFormData((prev) => {
-                const partySize = prev.party_size || 2;
-                const maxDurationPerGuest = 90; // 1hr 30min per guest in minutes
-                const maxTotalDuration = partySize * maxDurationPerGuest;
-                
-                // Calculate end time based on policy suggestion or max allowed
-                let duration = maxTotalDuration;
-                if (policy) {
-                  const suggestedDuration = partySize <= 4 
-                    ? policy.regular_duration_minutes 
-                    : policy.large_duration_minutes;
-                  // Use the smaller of suggested or max allowed
-                  duration = Math.min(suggestedDuration, maxTotalDuration);
-                }
-                
-                const endTime = calculateEndTime(newStartTime, duration);
-                return {
-                  ...prev,
-                  reservation_time: newStartTime,
-                  end_time: endTime,
-                  duration_minutes: duration,
-                };
-              });
-            }}
-            onBlur={() => handleBlur("reservation_time")}
-            aria-invalid={touched.reservation_time && !!errors.reservation_time}
-          />
+          {timeSlotsData?.time_slots && timeSlotsData.time_slots.length > 0 ? (
+            <Select
+              value={formData.reservation_time || ""}
+              onValueChange={(value) => {
+                const newStartTime = value;
+                if (!newStartTime) return;
+                setFormData((prev) => {
+                  const partySize = prev.party_size || 2;
+                  const maxDurationPerGuest = 90;
+                  const maxTotalDuration = partySize * maxDurationPerGuest;
+                  
+                  let duration = maxTotalDuration;
+                  if (policy) {
+                    const suggestedDuration = partySize <= 4 
+                      ? policy.regular_duration_minutes 
+                      : policy.large_duration_minutes;
+                    duration = Math.min(suggestedDuration, maxTotalDuration);
+                  }
+                  
+                  const endTime = calculateEndTime(newStartTime, duration);
+                  return {
+                    ...prev,
+                    reservation_time: newStartTime,
+                    end_time: endTime,
+                    duration_minutes: duration,
+                  };
+                });
+              }}
+            >
+              <SelectTrigger className="w-full" aria-invalid={touched.reservation_time && !!errors.reservation_time}>
+                <SelectValue placeholder="Select time" />
+              </SelectTrigger>
+              <SelectContent className="max-h-[400px]">
+                {timeSlotsData.time_slots.map((slot: TimeSlot) => (
+                  <SelectItem
+                    key={slot.time}
+                    value={slot.time}
+                    disabled={!slot.is_available}
+                    className={cn(
+                      "flex items-center justify-between w-full",
+                      !slot.is_available && "text-muted-foreground opacity-50"
+                    )}
+                  >
+                    <span>{slot.display_time} – {slot.end_time}</span>
+                    <span className={cn("text-xs font-medium", slot.is_available ? "text-green-600" : "text-red-600")}>
+                      {slot.is_available ? "Available" : "Booked"}
+                    </span>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          ) : (
+            <Input
+              id="res-time"
+              type="time"
+              value={formData.reservation_time || ""}
+              onChange={(e) => {
+                const newStartTime = e.target.value;
+                setFormData((prev) => {
+                  const partySize = prev.party_size || 2;
+                  const maxDurationPerGuest = 90;
+                  const maxTotalDuration = partySize * maxDurationPerGuest;
+                  
+                  let duration = maxTotalDuration;
+                  if (policy) {
+                    const suggestedDuration = partySize <= 4 
+                      ? policy.regular_duration_minutes 
+                      : policy.large_duration_minutes;
+                    duration = Math.min(suggestedDuration, maxTotalDuration);
+                  }
+                  
+                  const endTime = calculateEndTime(newStartTime, duration);
+                  return {
+                    ...prev,
+                    reservation_time: newStartTime,
+                    end_time: endTime,
+                    duration_minutes: duration,
+                  };
+                });
+              }}
+              onBlur={() => handleBlur("reservation_time")}
+              aria-invalid={touched.reservation_time && !!errors.reservation_time}
+              placeholder="Select date first"
+              disabled={!timeSlotsData}
+            />
+          )}
           {touched.reservation_time && errors.reservation_time && (
             <p className="text-xs text-destructive">{errors.reservation_time}</p>
+          )}
+          {timeSlotsData?.time_slots && (
+            <p className="text-xs text-muted-foreground">
+              Green = Available &nbsp;|&nbsp; Red = Fully Booked
+            </p>
           )}
         </div>
       </div>

@@ -11,6 +11,7 @@ import type {
   TableOccupancyByDate,
   ReservationPolicy,
   AvailabilityCheckResult,
+  TimeSlotsResult,
 } from "@/lib/types";
 
 export function useReservations(params?: QueryParams) {
@@ -173,5 +174,17 @@ export function useCheckAvailability() {
   return useMutation({
     mutationFn: (data: { reservation_date: string; reservation_time: string; party_size: number }) =>
       api.post<ApiResponse<AvailabilityCheckResult>>("/reservations/check-availability", data),
+  });
+}
+
+export function useTimeSlots(params: { reservation_date: string; party_size?: number; exclude_reservation_id?: string }) {
+  return useQuery({
+    queryKey: ["reservations", "time-slots", params],
+    queryFn: () =>
+      api
+        .get<ApiResponse<TimeSlotsResult>>("/reservations/time-slots", { params })
+        .then((res) => res.data.data),
+    enabled: !!params.reservation_date,
+    staleTime: 30_000,
   });
 }

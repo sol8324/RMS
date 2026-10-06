@@ -10,6 +10,7 @@ Route::middleware(['auth:sanctum','active'])->group(function () {
         Route::post('/', [ReservationController::class, 'store'])->middleware('role:admin,manager,waiter');
         Route::get('/policy', [ReservationController::class, 'policy']);
         Route::post('/check-availability', [ReservationController::class, 'checkAvailability']);
+        Route::get('/time-slots', [ReservationController::class, 'getOccupiedTimeSlots']);
         Route::get('/calendar', [ReservationController::class, 'calendar']);
         Route::get('/{id}', [ReservationController::class, 'show']);
         Route::put('/{id}', [ReservationController::class, 'update'])->middleware('role:admin,manager,waiter');

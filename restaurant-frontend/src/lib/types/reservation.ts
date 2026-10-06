@@ -58,6 +58,36 @@ export interface AvailabilityCheckResult {
   };
 }
 
+export interface TimeSlotTableOccupancy {
+  table_id: string;
+  table_number: string;
+  capacity: number;
+  is_occupied: boolean;
+  occupying_reservation: {
+    id: string;
+    guest_name: string;
+    party_size: number;
+    reservation_time: string;
+    duration_minutes: number;
+    status: string;
+  } | null;
+}
+
+export interface TimeSlot {
+  time: string;
+  display_time: string;
+  end_time: string;
+  is_available: boolean;
+  table_occupancy: TimeSlotTableOccupancy[];
+}
+
+export interface TimeSlotsResult {
+  date: string;
+  party_size: number;
+  duration_minutes: number;
+  time_slots: TimeSlot[];
+}
+
 export interface Reservation {
   id: string;
   customer_id?: string;
@@ -108,7 +138,7 @@ export interface ReservationFormData {
   guest_email?: string;
   table_id?: string;
   reservation_date: string;
-  reservation_time: string;
+  reservation_time?: string;
   end_time?: string;
   party_size: number;
   source?: string;

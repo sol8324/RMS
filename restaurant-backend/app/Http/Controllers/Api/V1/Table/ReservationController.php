@@ -200,6 +200,105 @@ class ReservationController extends Controller
         ]);
     }
 
+    /**
+     * Get all occupied time slots for a specific date.
+     * Returns time slots with table assignments for conflict visualization.
+     */
+    public function getOccupiedTimeSlots(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'reservation_date' => 'required|date|after_or_equal:today',
+            'party_size' => 'sometimes|integer|min:1|max:50',
+            'exclude_reservation_id' => 'sometimes|string',
+        ]);
+
+        $date = $validated['reservation_date'];
+        $partySize = $validated['party_size'] ?? 1;
+        $policy = $this->getReservationPolicy();
+        $duration = $this->calculateDuration($partySize, $policy);
+
+        // Get all active reservations for the date
+        $reservations = Reservation::where('reservation_date', $date)
+            ->whereIn('status', ['pending', 'confirmed', 'seated'])
+            ->when($validated['exclude_reservation_id'], function ($q) use ($validated) {
+                $q->where('id', '!=', $validated['exclude_reservation_id']);
+            })
+            ->with(['table'])
+            ->get();
+
+        // Build time slots (operating hours: 11:00-23:00 in 30-min increments)
+        $timeSlots = [];
+        $startHour = 11;
+        $endHour = 23;
+        $intervalMinutes = 30;
+
+        for ($hour = $startHour; $hour < $endHour; $hour++) {
+            for ($minute = 0; $minute < 60; $minute += $intervalMinutes) {
+                $time = sprintf('%02d:%02d', $hour, $minute);
+                $slotStart = Carbon::parse("{$date} {$time}");
+                $slotEnd = $slotStart->copy()->addMinutes($duration);
+
+                // Check each table for this time slot
+                $tableOccupancy = [];
+                $tables = Table::where('is_active', true)
+                    ->whereNotIn('status', ['needs_cleaning', 'maintenance'])
+                    ->where('capacity', '>=', $partySize)
+                    ->orderBy('number')
+                    ->get();
+
+                foreach ($tables as $table) {
+                    $isOccupied = false;
+                    $occupyingReservation = null;
+
+                    foreach ($reservations as $res) {
+                        if ($res->table_id !== $table->id) continue;
+                        $resStart = Carbon::parse($res->reservation_date->toDateString() . ' ' . $res->reservation_time);
+                        $resEnd = $resStart->copy()->addMinutes($res->duration_minutes ?? $duration);
+
+                        if ($slotStart->lt($resEnd) && $resStart->lt($slotEnd)) {
+                            $isOccupied = true;
+                            $occupyingReservation = [
+                                'id' => $res->id,
+                                'guest_name' => $res->guest_name,
+                                'party_size' => $res->party_size,
+                                'reservation_time' => $res->reservation_time,
+                                'duration_minutes' => $res->duration_minutes ?? $duration,
+                                'status' => $res->status,
+                            ];
+                            break;
+                        }
+                    }
+
+                    $tableOccupancy[] = [
+                        'table_id' => $table->id,
+                        'table_number' => $table->number,
+                        'capacity' => $table->capacity,
+                        'is_occupied' => $isOccupied,
+                        'occupying_reservation' => $occupyingReservation,
+                    ];
+                }
+
+                // Check if ANY table is available for this slot
+                $hasAvailableTable = collect($tableOccupancy)->contains('is_occupied', false);
+
+                $timeSlots[] = [
+                    'time' => $time,
+                    'display_time' => $slotStart->format('g:i A'),
+                    'end_time' => $slotEnd->format('g:i A'),
+                    'is_available' => $hasAvailableTable,
+                    'table_occupancy' => $tableOccupancy,
+                ];
+            }
+        }
+
+        return $this->success([
+            'date' => $date,
+            'party_size' => $partySize,
+            'duration_minutes' => $duration,
+            'time_slots' => $timeSlots,
+        ]);
+    }
+
     public function index(Request $request): JsonResponse
     {
         $query = Reservation::with(['customer', 'table']);
