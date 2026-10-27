@@ -21,6 +21,7 @@ import {
 } from "lucide-react";
 import type { Table as TableType, TableStatus } from "@/lib/types";
 import { cn, formatLabel } from "@/lib/utils";
+import { sortTablesByNumber } from "@/lib/utils/tableSort";
 
 const STATUS_GLOW: Record<TableStatus, string> = {
   available:
@@ -68,9 +69,7 @@ export function TableGridView({
     return null;
   }
 
-  const sorted = [...tables].sort((a, b) =>
-    a.number.localeCompare(b.number, undefined, { numeric: true })
-  );
+  const sorted = sortTablesByNumber(tables);
 
   return (
     <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
@@ -87,17 +86,27 @@ export function TableGridView({
               : STATUS_GLOW[table.status]
           )}
         >
+          {onView && (
+            <button
+              type="button"
+              onClick={() => onView(table)}
+              aria-label={`View table ${table.number} details`}
+              className="absolute inset-0 z-0 cursor-pointer rounded-xl outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+            />
+          )}
+
           {/* Status glow indicator */}
-          <div className="absolute -top-1 -right-1">
+          <div className="pointer-events-none absolute -top-1 -right-1 z-10">
             <span className={cn("h-3 w-3 rounded-full", isArchived ? "bg-gray-400" : STATUS_DOT[table.status])} />
           </div>
 
-          <div className="flex items-start justify-between mb-2">
+          <div className="pointer-events-none relative z-10 flex items-start justify-between mb-2">
             <div className="flex items-center gap-1.5">
               <span className="text-xs font-medium text-muted-foreground">
                 {table.number}
               </span>
             </div>
+            <div className="pointer-events-auto">
             <DropdownMenu>
               <DropdownMenuTrigger
                 render={<Button variant="ghost" size="icon-xs" />}
@@ -161,9 +170,10 @@ export function TableGridView({
                 )}
               </DropdownMenuContent>
             </DropdownMenu>
+            </div>
           </div>
 
-          <div className="flex-1 flex flex-col items-center justify-center text-center">
+          <div className="pointer-events-none relative z-10 flex flex-1 flex-col items-center justify-center text-center">
             <span className="text-lg font-bold">{table.number}</span>
             {table.name && (
               <span className="text-[11px] text-muted-foreground mt-0.5 line-clamp-1">
@@ -172,7 +182,7 @@ export function TableGridView({
             )}
           </div>
 
-          <div className="flex items-center justify-between mt-2 pt-2 border-t border-current/10">
+          <div className="pointer-events-none relative z-10 flex items-center justify-between mt-2 pt-2 border-t border-current/10">
             <div className="flex items-center gap-1 text-xs text-muted-foreground">
               <Users className="h-3 w-3" />
               {table.capacity}

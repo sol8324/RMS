@@ -269,3 +269,33 @@ export function useUnpaidOrders() {
     staleTime: 10_000,
   });
 }
+
+/**
+ * Active orders for a single table, used by the table details modal.
+ * Polling is enabled only while the modal is open; there is no backend
+ * WebSocket service, so this is the safe real-time fallback.
+ */
+export function useTableActiveOrders(
+  tableId?: string | null,
+  enabled = true
+) {
+  return useQuery({
+    queryKey: ["orders", "table", tableId, "active"],
+    queryFn: () =>
+      api
+        .get<PaginatedResponse<Order>>("/orders", {
+          params: {
+            table_id: tableId,
+            active: 1,
+            with_items: 1,
+            per_page: 50,
+          },
+        })
+        .then((res) => normalizePaginated(res.data)),
+    enabled: enabled && !!tableId,
+    staleTime: 0,
+    refetchInterval: enabled && tableId ? 5_000 : false,
+    refetchIntervalInBackground: false,
+    retry: 1,
+  });
+}

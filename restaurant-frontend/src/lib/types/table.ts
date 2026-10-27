@@ -14,6 +14,10 @@ export interface Table {
   width: number;
   height: number;
   current_order_id?: string;
+  floor_plan?: {
+    id: string;
+    name: string;
+  } | null;
   // Present on /tables/order-eligible: the active seated reservation that
   // makes an occupied table bookable for its first dine-in order.
   seating?: {

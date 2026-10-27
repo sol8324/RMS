@@ -6,6 +6,7 @@ namespace App\Http\Controllers\Api\V1\Table;
 
 use App\Http\Controllers\Controller;
 use App\Models\FloorPlan;
+use App\Models\Table;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -62,11 +63,13 @@ class FloorPlanController extends Controller
 
     public function show(string $id): JsonResponse
     {
-        $floorPlan = FloorPlan::with(['tables' => fn ($q) => $q->orderBy('number')])->withCount('tables')->find($id);
+        $floorPlan = FloorPlan::with('tables')->withCount('tables')->find($id);
 
         if (!$floorPlan) {
             return $this->notFound('Floor plan not found.');
         }
+
+        $floorPlan->setRelation('tables', Table::sortByNumber($floorPlan->tables));
 
         return $this->success([
             'id' => $floorPlan->id,

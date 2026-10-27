@@ -46,6 +46,52 @@ describe("countActiveByStatus", () => {
   });
 });
 
+describe("TableGridView details interaction", () => {
+  it("opens details from the card body", async () => {
+    const user = userEvent.setup();
+    const onView = vi.fn();
+    render(<TableGridView tables={[T1]} onView={onView} />);
+
+    await user.click(
+      screen.getByRole("button", { name: "View table 1 details" })
+    );
+
+    expect(onView).toHaveBeenCalledTimes(1);
+    expect(onView).toHaveBeenCalledWith(T1);
+  });
+
+  it("does not double-open when View is chosen from the actions menu", async () => {
+    const user = userEvent.setup();
+    const onView = vi.fn();
+    render(<TableGridView tables={[T1]} onView={onView} />);
+
+    await user.click(screen.getByRole("button", { name: /Actions/i }));
+    await user.click(await screen.findByRole("menuitem", { name: "View" }));
+
+    expect(onView).toHaveBeenCalledTimes(1);
+    expect(onView).toHaveBeenCalledWith(T1);
+  });
+});
+
+describe("TableGridView ordering", () => {
+  it("renders table cards in natural number order", () => {
+    const t2 = makeTable({ id: "t-2", number: "2" });
+    const t10 = makeTable({ id: "t-10", number: "10" });
+
+    render(<TableGridView tables={[t10, T1, t2]} onView={vi.fn()} />);
+
+    const labels = screen
+      .getAllByRole("button", { name: /View table .* details/i })
+      .map((button) => button.getAttribute("aria-label"));
+
+    expect(labels).toEqual([
+      "View table 1 details",
+      "View table 2 details",
+      "View table 10 details",
+    ]);
+  });
+});
+
 describe("TableGridView archived presentation", () => {
   it("shows an Archived badge instead of the operational status", () => {
     render(<TableGridView tables={[T1, TT99]} />);

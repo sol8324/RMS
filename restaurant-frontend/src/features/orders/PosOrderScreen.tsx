@@ -37,6 +37,7 @@ import {
   useOrders,
 } from "@/lib/hooks";
 import { formatCurrency, cn } from "@/lib/utils";
+import { sortTablesByNumber } from "@/lib/utils/tableSort";
 import type { OrderType, Table } from "@/lib/types";
 
 interface CartLine {
@@ -101,11 +102,13 @@ export function PosOrderScreen({ onOrderSent }: PosOrderScreenProps) {
 
   const availableTables = useMemo(
     () =>
-      (eligibleTables ?? tables).filter(
-        (t) =>
-          t.status === "available" ||
-          (t.status === "occupied" && !!t.seating) ||
-          t.id === tableId
+      sortTablesByNumber(
+        (eligibleTables ?? tables).filter(
+          (t) =>
+            t.status === "available" ||
+            (t.status === "occupied" && !!t.seating) ||
+            t.id === tableId
+        )
       ),
     [eligibleTables, tables, tableId]
   );

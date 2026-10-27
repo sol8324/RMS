@@ -9,6 +9,7 @@ import { Users, CalendarDays, CalendarClock, ChevronLeft, ChevronRight, Table as
 import type { Reservation, TableOccupancy, TableOccupancyByDate } from "@/lib/types";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
+import { sortTablesByNumber } from "@/lib/utils/tableSort";
 
 interface CalendarViewProps {
   reservations: Reservation[];
@@ -188,7 +189,7 @@ export function CalendarView({
     : [];
   
   const selectedDateTableOccupancy = selectedDateKey && tableOccupancy
-    ? tableOccupancy[selectedDateKey] ?? []
+    ? sortTablesByNumber(tableOccupancy[selectedDateKey] ?? [])
     : [];
 
   // Check if selected date has events

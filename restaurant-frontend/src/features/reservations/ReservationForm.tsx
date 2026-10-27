@@ -1,6 +1,7 @@
 "use client";
 
 import { cn } from "@/lib/utils";
+import { compareTableNumbers } from "@/lib/utils/tableSort";
 import { useState, useEffect, useEffectEvent, useRef, useMemo } from "react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -158,7 +159,10 @@ export function ReservationForm({
       .filter((t) => t.is_active !== false && t.status !== "needs_cleaning" && t.status !== "maintenance")
       .filter((t) => t.capacity >= formData.party_size)
       .map((t) => ({ ...t, isAvailable: availableTableIds.has(t.id) }))
-      .sort((a, b) => a.capacity - b.capacity || Number(a.number) - Number(b.number)),
+      .sort(
+        (a, b) =>
+          a.capacity - b.capacity || compareTableNumbers(a.number, b.number)
+      ),
     [allTables, availableTableIds, formData.party_size]
   );
 
@@ -173,7 +177,7 @@ export function ReservationForm({
         isExactMatch: formData.party_size > 0 && t.capacity === formData.party_size,
         occupancyStatus: availableTableIds.has(t.id) ? "available" : "occupied" 
       }))
-      .sort((a, b) => Number(a.number) - Number(b.number)),
+      .sort((a, b) => compareTableNumbers(a.number, b.number)),
     [allTables, availableTableIds, formData.party_size]
   );
 

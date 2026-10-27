@@ -15,6 +15,7 @@ import { Search, Receipt, ChevronDown, ChevronRight } from "lucide-react";
 import { useUnpaidOrders } from "@/lib/hooks";
 import { formatCurrency, formatLabel } from "@/lib/utils";
 import { customerDisplayName, tableDisplayName } from "@/lib/utils/orderDisplay";
+import { compareTableNumbers } from "@/lib/utils/tableSort";
 import type { Order } from "@/lib/types";
 
 const PAYMENT_BADGE: Record<string, string> = {
@@ -217,9 +218,13 @@ export function ExistingOrderDialog({
 
     return (
       <div>
-        {Object.entries(ordersByTable.groups).map(([tableKey, tableOrders]) =>
-          renderTableOrders(tableKey, tableOrders)
-        )}
+        {Object.entries(ordersByTable.groups)
+          .sort(([, a], [, b]) =>
+            compareTableNumbers(a[0]?.table?.number, b[0]?.table?.number)
+          )
+          .map(([tableKey, tableOrders]) =>
+            renderTableOrders(tableKey, tableOrders)
+          )}
         {renderNoTableOrders()}
       </div>
     );

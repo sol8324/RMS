@@ -36,6 +36,26 @@ Keys live only in `restaurant-backend/.env` (gitignored).
 
 ---
 
+## Changes (Oct 27, 2026)
+
+### Table Details & Live Orders
+- Responsive table details modal with capacity, status, floor plan, wheelchair accessibility, and current seating information
+- Permission-gated live active orders (`orders.view`) with item modifiers, notes, totals, and a "View order" action
+- Active orders include pending, confirmed, preparing, ready, served, and on-hold; completed, cancelled, and voided orders are excluded
+- Polls only while the modal is open (every 5 seconds); background polling remains disabled
+- Backend order listing supports validated `table_id`, `active=1`, and `with_items=1` filters
+
+### Natural Table Number Ordering
+- Table numbers sort naturally across the app (`1, 2, 10` and `TBL-2, TBL-10`)
+- Backend uses `Table::sortByNumber()` in table, reservation, and floor-plan views
+- Frontend uses a shared `sortTablesByNumber`/`compareTableNumbers` utility in table grids, reservations, POS, orders, and payment dialogs
+
+### Verification
+- Backend: 404 tests pass (2,030 assertions)
+- Frontend: 256 tests pass; TypeScript strict check clean
+
+---
+
 ## Today's Changes (Oct 6, 2026)
 
 ### 🎯 Reservation System Enhancements

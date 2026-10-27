@@ -15,6 +15,7 @@ import {
 import { LoadingSpinner } from "@/components/shared";
 import { Trash2, Search } from "lucide-react";
 import { formatCurrency, formatLabel } from "@/lib/utils";
+import { sortTablesByNumber } from "@/lib/utils/tableSort";
 import type {
   OrderFormData,
   OrderItemFormData,
@@ -79,11 +80,13 @@ export function OrderForm({
   const [itemFocused, setItemFocused] = useState(false);
   const itemBlurTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const availableTables = tables.filter(
-    (t) =>
-      (t.is_active !== false && t.status === "available") ||
-      (t.status === "occupied" && !!t.seating) ||
-      t.id === formData.table_id
+  const availableTables = sortTablesByNumber(
+    tables.filter(
+      (t) =>
+        (t.is_active !== false && t.status === "available") ||
+        (t.status === "occupied" && !!t.seating) ||
+        t.id === formData.table_id
+    )
   );
   const selectedCustomer = customers.find((c) => c.id === formData.customer_id) as Customer | undefined;
   const selectedTable = tables.find((t) => t.id === formData.table_id) as Table | undefined;

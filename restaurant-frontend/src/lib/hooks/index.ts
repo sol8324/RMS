@@ -10,7 +10,7 @@ export {
   useTimeSlots,
 } from "./useReservations";
 export { useMenuCategories, useMenuItems } from "./useMenu";
-export { useOrders, useOrder, useUnpaidOrders } from "./useOrders";
+export { useOrders, useOrder, useUnpaidOrders, useTableActiveOrders } from "./useOrders";
 export { useNotifications } from "./useNotifications";
 export { useKitchenOrders } from "./useKitchen";
 export {

@@ -1,10 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import { PageHeader, ConfirmDialog, CardGridSkeleton, ErrorState, EmptyState, StatusBadge } from "@/components/shared";
+import { PageHeader, ConfirmDialog, CardGridSkeleton, ErrorState, EmptyState } from "@/components/shared";
 import { useAuth } from "@/providers/AuthProvider";
-import { canCreateTable, canEditTable, canArchiveTable, canChangeTableStatus } from "@/lib/utils/permissions";
+import { canCreateTable, canEditTable, canArchiveTable, canChangeTableStatus, canView } from "@/lib/utils/permissions";
 import {
+  TableDetailsModal,
   TableStats,
   TableForm,
 } from "@/features/tables";
@@ -34,7 +35,7 @@ export default function TablesPage() {
   const [archiveTarget, setArchiveTarget] = useState<TableType | null>(null);
   const [restoreTarget, setRestoreTarget] = useState<TableType | null>(null);
   const [showArchived, setShowArchived] = useState(false);
-  const [viewTarget, setViewTarget] = useState<TableType | null>(null);
+  const [viewTargetId, setViewTargetId] = useState<string | null>(null);
   const [showTableDialog, setShowTableDialog] = useState(false);
   const [editingTable, setEditingTable] = useState<TableType | null>(null);
   const [statusActionTarget, setStatusActionTarget] = useState<{
@@ -44,6 +45,7 @@ export default function TablesPage() {
 
   const tables = useTables();
   const allTables = tables.list.data ?? [];
+  const viewTarget = allTables.find((table) => table.id === viewTargetId) ?? null;
   const { user } = useAuth();
   const canCreate = canCreateTable(user?.role);
   const canEdit = canEditTable(user?.role);
@@ -204,7 +206,7 @@ export default function TablesPage() {
           <TableGridView
             tables={filteredTables}
             onStatusChange={canChangeStatus ? handleStatusChange : undefined}
-            onView={(t) => setViewTarget(t)}
+            onView={(t) => setViewTargetId(t.id)}
             onEdit={canEdit ? (t) => {
               setEditingTable(t);
               setShowTableDialog(true);
@@ -284,56 +286,12 @@ export default function TablesPage() {
           </DialogContent>
         </Dialog>
 
-        <Dialog
+        <TableDetailsModal
+          table={viewTarget}
           open={!!viewTarget}
-          onOpenChange={(open) => !open && setViewTarget(null)}
-        >
-          <DialogContent className="sm:max-w-md w-[calc(100vw-24px)] max-h-[calc(100dvh-24px)] overflow-hidden flex flex-col p-0 gap-0">
-            <DialogHeader className="shrink-0 px-6 pt-6 pb-4 border-b">
-              <DialogTitle>
-                Table {viewTarget?.number}
-                {viewTarget?.name ? ` · ${viewTarget.name}` : ""}
-              </DialogTitle>
-            </DialogHeader>
-            {viewTarget && (
-              <div className="space-y-4 flex-1 min-h-0 overflow-y-auto overflow-x-hidden px-6 py-4">
-                <div className="flex items-center gap-2">
-                  {viewTarget.is_active === false ? (
-                    <StatusBadge
-                      status="inactive"
-                      label="Archived"
-                      className="text-[10px] px-1.5 py-0"
-                      title={`Underlying status: ${formatLabel(viewTarget.status)}`}
-                    />
-                  ) : (
-                    <StatusBadge status={viewTarget.status} className="text-[10px] px-1.5 py-0" />
-                  )}
-                </div>
-                <div className="grid grid-cols-2 gap-3 text-sm">
-                  <div>
-                    <p className="text-muted-foreground">Capacity</p>
-                    <p className="font-medium">{viewTarget.capacity} seats</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">Shape</p>
-                    <p className="font-medium">{viewTarget.shape ? formatLabel(viewTarget.shape) : "—"}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">Wheelchair Access</p>
-                    <p className="font-medium">
-                      {viewTarget.is_wheelchair_accessible ? "Yes" : "No"}
-                    </p>
-                  </div>
-                </div>
-                <div className="flex justify-end pt-2">
-                  <Button variant="outline" size="sm" onClick={() => setViewTarget(null)}>
-                    Close
-                  </Button>
-                </div>
-              </div>
-            )}
-          </DialogContent>
-        </Dialog>
+          onOpenChange={(open) => !open && setViewTargetId(null)}
+          canViewOrders={canView(user?.role, "orders")}
+        />
       </div>
     </div>
   );

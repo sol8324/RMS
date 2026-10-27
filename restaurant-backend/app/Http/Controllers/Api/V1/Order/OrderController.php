@@ -16,6 +16,7 @@ use App\Models\RestaurantSetting;
 use App\Models\Table;
 use App\Services\OrderWorkflowService;
 use App\Services\PricingService;
+use App\Services\TableDiningPolicy;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -59,6 +60,22 @@ class OrderController extends Controller
             $query->whereIn('status', $statuses);
         }
 
+        if ($tableId = $request->input('table_id')) {
+            $request->validate([
+                'table_id' => 'uuid',
+            ]);
+            $query->where('table_id', $tableId);
+        }
+
+        if ($request->boolean('active')) {
+            $query->whereIn('status', TableDiningPolicy::ACTIVE_ORDER_STATUSES);
+        }
+
+        $withItems = $request->boolean('with_items');
+        if ($withItems) {
+            $query->with('items.modifiers');
+        }
+
         if ($orderType = $request->input('order_type')) {
             $query->where('order_type', $orderType);
         }
@@ -80,43 +97,54 @@ class OrderController extends Controller
         $orders = $query->orderBy('created_at', 'desc')
             ->paginate($request->integer('per_page', 15));
 
-        $data = $orders->getCollection()->map(fn (Order $o) => [
-            'id' => $o->id,
-            'order_number' => $o->order_number,
-            'order_type' => $o->order_type,
-            'status' => $o->status,
-            'subtotal' => (float) $o->subtotal,
-            'tax_amount' => (float) $o->tax_amount,
-            'discount_amount' => (float) $o->discount_amount,
-            'applied_discount' => $o->applied_discount_name ? [
-                'id' => $o->discount_id,
-                'name' => $o->applied_discount_name,
-                'code' => $o->applied_discount_code,
-                'type' => $o->applied_discount_type,
-                'value' => (float) $o->applied_discount_value,
-            ] : null,
-            'service_charge' => (float) $o->service_charge,
-            'total_amount' => (float) $o->total,
-            'payment_status' => $o->payment_status,
-            'payment_method' => $o->payment_method,
-            'notes' => $o->notes,
-            'customer_id' => $o->customer_id,
-            'table_id' => $o->table_id,
-            'customer' => $o->customer ? [
-                'id' => $o->customer->id,
-                'name' => $o->customer->name,
-            ] : null,
-            'customer_name' => $o->customer?->name,
-            'table_number' => $o->table?->number,
-            'table' => $o->table ? [
-                'id' => $o->table->id,
-                'number' => $o->table->number,
-            ] : null,
-            'items_count' => $o->items->count(),
-            'placed_at' => $o->created_at?->toISOString(),
-            'created_at' => $o->created_at?->toISOString(),
-            'updated_at' => $o->updated_at?->toISOString(),
-        ]);
+        $data = $orders->getCollection()->map(function (Order $o) use ($withItems) {
+            $payload = [
+                'id' => $o->id,
+                'order_number' => $o->order_number,
+                'order_type' => $o->order_type,
+                'status' => $o->status,
+                'subtotal' => (float) $o->subtotal,
+                'tax_amount' => (float) $o->tax_amount,
+                'discount_amount' => (float) $o->discount_amount,
+                'applied_discount' => $o->applied_discount_name ? [
+                    'id' => $o->discount_id,
+                    'name' => $o->applied_discount_name,
+                    'code' => $o->applied_discount_code,
+                    'type' => $o->applied_discount_type,
+                    'value' => (float) $o->applied_discount_value,
+                ] : null,
+                'service_charge' => (float) $o->service_charge,
+                'total_amount' => (float) $o->total,
+                'payment_status' => $o->payment_status,
+                'payment_method' => $o->payment_method,
+                'notes' => $o->notes,
+                'customer_id' => $o->customer_id,
+                'table_id' => $o->table_id,
+                'customer' => $o->customer ? [
+                    'id' => $o->customer->id,
+                    'name' => $o->customer->name,
+                ] : null,
+                'customer_name' => $o->customer?->name,
+                'table_number' => $o->table?->number,
+                'table' => $o->table ? [
+                    'id' => $o->table->id,
+                    'number' => $o->table->number,
+                ] : null,
+                'items_count' => $o->items->count(),
+                'placed_at' => $o->created_at?->toISOString(),
+                'created_at' => $o->created_at?->toISOString(),
+                'updated_at' => $o->updated_at?->toISOString(),
+            ];
+
+            if ($withItems) {
+                $payload['items'] = $o->items
+                    ->map(fn (OrderItem $item) => $this->orderItemPayload($item))
+                    ->values()
+                    ->all();
+            }
+
+            return $payload;
+        });
 
         return $this->success([
             'items' => $data,
@@ -359,21 +387,10 @@ class OrderController extends Controller
                 'id' => $result->table->id,
                 'number' => $result->table->number,
             ] : null,
-            'items' => $result->items->map(fn (OrderItem $item) => [
-                'id' => $item->id,
-                'menu_item_id' => $item->menu_item_id,
-                'name' => $item->name,
-                'quantity' => $item->quantity,
-                'unit_price' => (float) $item->unit_price,
-                'total_amount' => (float) $item->total_price,
-                'notes' => $item->notes,
-                'status' => $item->status,
-                'modifiers' => $item->modifiers->map(fn ($m) => [
-                    'id' => $m->id,
-                    'name' => $m->name,
-                    'price' => (float) ($m->pivot->price ?? $m->price),
-                ]),
-            ]),
+            'items' => $result->items
+                ->map(fn (OrderItem $item) => $this->orderItemPayload($item))
+                ->values()
+                ->all(),
             'created_at' => $result->created_at?->toISOString(),
             'updated_at' => $result->updated_at?->toISOString(),
         ], 'Order created successfully.');
@@ -429,22 +446,10 @@ return $this->success([
                 'id' => $order->table->id,
                 'number' => $order->table->number,
             ] : null,
-            'items' => $order->items->map(fn (OrderItem $item) => [
-                'id' => $item->id,
-                'menu_item_id' => $item->menu_item_id,
-                'name' => $item->name,
-                'quantity' => $item->quantity,
-                'unit_price' => (float) $item->unit_price,
-                'total_amount' => (float) $item->total_price,
-                'discount_amount' => (float) $item->discount_amount,
-                'notes' => $item->notes,
-                'status' => $item->status,
-                'modifiers' => $item->modifiers->map(fn ($m) => [
-                    'id' => $m->id,
-                    'name' => $m->name,
-                    'price' => (float) ($m->pivot->price ?? $m->price),
-                ]),
-            ]),
+            'items' => $order->items
+                ->map(fn (OrderItem $item) => $this->orderItemPayload($item))
+                ->values()
+                ->all(),
             'payments' => $order->invoice?->payments->map(fn ($p) => [
                 'id' => $p->id,
                 'amount' => (float) $p->amount,
@@ -1448,6 +1453,26 @@ return $this->success([
         ]);
 
         return $this->success(['items' => $data]);
+    }
+
+    private function orderItemPayload(OrderItem $item): array
+    {
+        return [
+            'id' => $item->id,
+            'menu_item_id' => $item->menu_item_id,
+            'name' => $item->name,
+            'quantity' => $item->quantity,
+            'unit_price' => (float) $item->unit_price,
+            'total_amount' => (float) $item->total_price,
+            'discount_amount' => (float) $item->discount_amount,
+            'notes' => $item->notes,
+            'status' => $item->status,
+            'modifiers' => $item->modifiers->map(fn ($m) => [
+                'id' => $m->id,
+                'name' => $m->name,
+                'price' => (float) ($m->pivot->price ?? $m->price),
+            ])->values()->all(),
+        ];
     }
 
     public function reorder(Request $request, string $id): JsonResponse

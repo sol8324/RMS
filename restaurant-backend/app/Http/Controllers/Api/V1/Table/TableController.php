@@ -35,7 +35,7 @@ class TableController extends Controller
             $query->whereRaw('LOWER(number) LIKE ?', ["%".strtolower($search)."%"]);
         }
 
-        $tables = $query->orderBy('number')->get();
+        $tables = Table::sortByNumber($query->get());
 
         $data = $tables->map(fn (Table $t) => [
             'id' => $t->id,
@@ -48,6 +48,7 @@ class TableController extends Controller
             'width' => (float) $t->width,
             'height' => (float) $t->height,
             'is_active' => $t->is_active,
+            'is_wheelchair_accessible' => (bool) $t->is_wheelchair_accessible,
             'floor_plan' => $t->floorPlan ? [
                 'id' => $t->floorPlan->id,
                 'name' => $t->floorPlan->name,
@@ -75,6 +76,7 @@ class TableController extends Controller
             'width' => 'sometimes|numeric|min:1',
             'height' => 'sometimes|numeric|min:1',
             'is_active' => 'sometimes|boolean',
+            'is_wheelchair_accessible' => 'sometimes|boolean',
         ]);
 
         $floorPlanId = $validated['floor_plan_id']
@@ -119,6 +121,7 @@ class TableController extends Controller
             'width' => (float) $table->width,
             'height' => (float) $table->height,
             'is_active' => $table->is_active,
+            'is_wheelchair_accessible' => (bool) $table->is_wheelchair_accessible,
             'floor_plan_id' => $table->floor_plan_id,
             'created_at' => $table->created_at?->toISOString(),
             'updated_at' => $table->updated_at?->toISOString(),
@@ -144,6 +147,7 @@ class TableController extends Controller
             'width' => (float) $table->width,
             'height' => (float) $table->height,
             'is_active' => $table->is_active,
+            'is_wheelchair_accessible' => (bool) $table->is_wheelchair_accessible,
             'floor_plan' => $table->floorPlan ? [
                 'id' => $table->floorPlan->id,
                 'name' => $table->floorPlan->name,
@@ -172,6 +176,7 @@ class TableController extends Controller
             'width' => 'sometimes|numeric|min:1',
             'height' => 'sometimes|numeric|min:1',
             'is_active' => 'sometimes|boolean',
+            'is_wheelchair_accessible' => 'sometimes|boolean',
         ]);
 
         if (isset($validated['number'])) {
@@ -215,6 +220,7 @@ class TableController extends Controller
             'width' => (float) $table->width,
             'height' => (float) $table->height,
             'is_active' => $table->is_active,
+            'is_wheelchair_accessible' => (bool) $table->is_wheelchair_accessible,
             'floor_plan_id' => $table->floor_plan_id,
             'created_at' => $table->created_at?->toISOString(),
             'updated_at' => $table->updated_at?->toISOString(),
@@ -476,11 +482,12 @@ class TableController extends Controller
      */
     public function orderEligible(Request $request): JsonResponse
     {
-        $tables = Table::query()
-            ->where('is_active', true)
-            ->whereIn('status', ['available', 'occupied'])
-            ->orderBy('number')
-            ->get();
+        $tables = Table::sortByNumber(
+            Table::query()
+                ->where('is_active', true)
+                ->whereIn('status', ['available', 'occupied'])
+                ->get()
+        );
 
         $items = [];
         foreach ($tables as $table) {
@@ -596,9 +603,7 @@ class TableController extends Controller
             }
         }
 
-        $tables = $query->orderBy('capacity')
-            ->orderBy('number')
-            ->get();
+        $tables = Table::sortByNumber($query->get(), capacityFirst: true);
 
         $data = $tables->map(fn (Table $t) => [
             'id' => $t->id,
@@ -611,6 +616,7 @@ class TableController extends Controller
             'width' => (float) $t->width,
             'height' => (float) $t->height,
             'is_active' => $t->is_active,
+            'is_wheelchair_accessible' => (bool) $t->is_wheelchair_accessible,
             'floor_plan' => $t->floorPlan ? [
                 'id' => $t->floorPlan->id,
                 'name' => $t->floorPlan->name,

@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/dialog";
 import { LoadingSpinner } from "@/components/shared";
 import { formatCurrency } from "@/lib/utils";
+import { sortTablesByNumber } from "@/lib/utils/tableSort";
 import type { PaymentLine } from "../types";
 import type { PaymentMethod } from "@/lib/types";
 import type { Customer } from "@/lib/types";
@@ -99,7 +100,9 @@ export function PaymentDialog({
 
   const customers = customersList.data?.data?.data ?? [];
   const tables = tablesList.data ?? [];
-  const availableTables = tables.filter((t) => t.status === "available");
+  const availableTables = sortTablesByNumber(
+    tables.filter((t) => t.status === "available")
+  );
 
   const isCash = method === "cash";
 

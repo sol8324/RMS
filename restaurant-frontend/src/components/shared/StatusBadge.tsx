@@ -49,6 +49,7 @@ const STATUS_TONE: Record<string, Tone> = {
   preparing: 'warning',
   ready: 'success',
   served: 'service',
+  on_hold: 'warning',
   completed: 'success',
   cancelled: 'danger',
   voided: 'danger',

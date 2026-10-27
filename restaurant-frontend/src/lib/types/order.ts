@@ -92,8 +92,10 @@ export type OrderStatus =
   | "preparing"
   | "ready"
   | "served"
+  | "on_hold"
   | "completed"
-  | "cancelled";
+  | "cancelled"
+  | "voided";
 
 export type OrderItemStatus =
   | "pending"

@@ -18,8 +18,10 @@ const STATUS_LABELS: Record<OrderStatus, string> = {
   preparing: "Preparing",
   ready: "Ready",
   served: "Served",
+  on_hold: "On Hold",
   completed: "Completed",
   cancelled: "Cancelled",
+  voided: "Voided",
 };
 
 export function OrderStatusSelect({

@@ -138,12 +138,13 @@ class ReservationController extends Controller
      */
     private function findBestAvailableTable(int $partySize, string $date, string $time, int $durationMinutes): ?Table
     {
-        $tables = Table::where('is_active', true)
-            ->whereNotIn('status', ['needs_cleaning', 'maintenance'])
-            ->where('capacity', '>=', $partySize)
-            ->orderBy('capacity')
-            ->orderBy('number')
-            ->get();
+        $tables = Table::sortByNumber(
+            Table::where('is_active', true)
+                ->whereNotIn('status', ['needs_cleaning', 'maintenance'])
+                ->where('capacity', '>=', $partySize)
+                ->get(),
+            capacityFirst: true
+        );
 
         foreach ($tables as $table) {
             if ($this->isTableAvailableForDuration($table->id, $date, $time, $durationMinutes)) {
@@ -240,11 +241,12 @@ class ReservationController extends Controller
 
                 // Check each table for this time slot
                 $tableOccupancy = [];
-                $tables = Table::where('is_active', true)
-                    ->whereNotIn('status', ['needs_cleaning', 'maintenance'])
-                    ->where('capacity', '>=', $partySize)
-                    ->orderBy('number')
-                    ->get();
+                $tables = Table::sortByNumber(
+                    Table::where('is_active', true)
+                        ->whereNotIn('status', ['needs_cleaning', 'maintenance'])
+                        ->where('capacity', '>=', $partySize)
+                        ->get()
+                );
 
                 foreach ($tables as $table) {
                     $isOccupied = false;
@@ -641,10 +643,11 @@ class ReservationController extends Controller
      */
     private function getTableOccupancy(string $startDate, string $endDate): array
     {
-        $tables = \App\Models\Table::where('is_active', true)
-            ->whereNotIn('status', ['maintenance', 'needs_cleaning'])
-            ->orderBy('number')
-            ->get(['id', 'number', 'capacity', 'status']);
+        $tables = Table::sortByNumber(
+            Table::where('is_active', true)
+                ->whereNotIn('status', ['maintenance', 'needs_cleaning'])
+                ->get(['id', 'number', 'capacity', 'status'])
+        );
 
         $reservations = Reservation::whereBetween('reservation_date', [$startDate, $endDate])
             ->whereIn('status', ['pending', 'confirmed', 'seated'])
