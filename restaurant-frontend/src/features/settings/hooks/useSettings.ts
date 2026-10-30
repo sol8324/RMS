@@ -20,7 +20,11 @@ export function useSettings() {
     queryFn: () =>
       api
         .get<ApiResponse<Record<string, unknown>>>("/admin/settings")
-        .then((res) => normalizeSettings(res.data.data)),
+        .then((res) => {
+          const payload = res.data.data;
+          const settings = payload?.restaurant ?? payload;
+          return normalizeSettings(settings);
+        }),
     staleTime: 2 * 60 * 1000,
   });
 }
@@ -45,4 +49,30 @@ export function useTaxRate(): number {
   const { data } = useSettings();
   const rate = data?.default_tax_rate;
   return typeof rate === "number" && rate > 0 ? rate : 12;
+}
+
+/**
+ * Returns the list of enabled payment methods based on admin settings.
+ * Filters by role: cashier/admin see all enabled; waiter/kitchen see enabled methods for display.
+ */
+export function useActivePaymentMethods(): {
+  cash: boolean;
+  card: boolean;
+  e_wallet: boolean;
+  e_bank: boolean;
+  enabledMethods: string[];
+} {
+  const { data } = useSettings();
+  return {
+    cash: data?.payment_cash_enabled ?? true,
+    card: data?.payment_card_enabled ?? true,
+    e_wallet: data?.payment_e_wallet_enabled ?? true,
+    e_bank: data?.payment_e_bank_enabled ?? false,
+    enabledMethods: [
+      data?.payment_cash_enabled !== false && "cash",
+      data?.payment_card_enabled !== false && "card",
+      data?.payment_e_wallet_enabled !== false && "e_wallet",
+      data?.payment_e_bank_enabled === true && "e_bank",
+    ].filter(Boolean) as string[],
+  };
 }

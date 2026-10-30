@@ -1,6 +1,6 @@
 export { useAuth } from "@/providers/AuthProvider";
 export { useCustomers, useCustomer } from "./useCustomers";
-export { useTables, useOrderEligibleTables } from "./useTables";
+export { useTables, useOrderEligibleTables, useTableSchedule } from "./useTables";
 export {
   useReservations,
   useReservation,

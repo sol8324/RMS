@@ -464,7 +464,7 @@ public function sales(Request $request): JsonResponse
 
         $segCounts = [
             'vip' => (int) Customer::where('customer_type', 'vip')->count(),
-            'regular' => (int) Customer::where('customer_type', 'regular')->count(),
+            'regular' => (int) Customer::whereIn('customer_type', ['regular', 'registered'])->count(),
             'walk_in' => (int) Customer::where('customer_type', 'walk_in')->count(),
         ];
 
@@ -475,7 +475,7 @@ public function sales(Request $request): JsonResponse
                 'segment' => $label,
                 'count' => $count,
                 'percentage' => $totalCustomers > 0 ? ($count / $totalCustomers) * 100 : 0,
-                'average_spend' => (float) Customer::where('customer_type', $type)->avg('total_spent'),
+                'average_spend' => (float) Customer::whereIn('customer_type', $type === 'regular' ? ['regular', 'registered'] : [$type])->avg('total_spent'),
             ];
         }
 

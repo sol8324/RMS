@@ -7,7 +7,7 @@ import {
   ReservationStats,
   CalendarView,
   ReservationForm,
-  ReservationDetail,
+  ReservationDetailsModal,
 } from "@/features/reservations";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -356,25 +356,16 @@ export default function ReservationsPage() {
           </DialogContent>
         </Dialog>
 
-        <Dialog
+        <ReservationDetailsModal
+          reservation={viewTarget}
           open={!!viewTarget}
           onOpenChange={(open) => !open && setViewTarget(null)}
-        >
-          <DialogContent className="sm:max-w-3xl max-h-[calc(100dvh-24px)] overflow-y-auto">
-            <DialogHeader>
-              <DialogTitle>Reservation Details</DialogTitle>
-            </DialogHeader>
-            {viewTarget && (
-              <ReservationDetail
-                reservation={viewTarget}
-                onEdit={() => setEditTarget(viewTarget)}
-                onCancel={() => setCancelTarget(viewTarget)}
-                onCheckIn={() => setCheckInTarget(viewTarget)}
-                onComplete={() => setCompleteTarget(viewTarget)}
-              />
-            )}
-          </DialogContent>
-        </Dialog>
+          canManage={canCreate}
+          onEdit={() => viewTarget && setEditTarget(viewTarget)}
+          onCancel={() => viewTarget && setCancelTarget(viewTarget)}
+          onCheckIn={() => viewTarget && setCheckInTarget(viewTarget)}
+          onComplete={() => viewTarget && setCompleteTarget(viewTarget)}
+        />
 
         <Dialog
           open={!!editTarget}

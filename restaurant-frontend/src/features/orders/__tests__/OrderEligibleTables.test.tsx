@@ -48,7 +48,7 @@ async function openTableDropdown(user: ReturnType<typeof userEvent.setup>) {
   const triggers = screen.getAllByRole("combobox");
   // Customer select renders first; the table select carries the table placeholder.
   const tableTrigger = triggers.find((t) =>
-    /Select table|No table|1 —|2 ·/.test(t.textContent ?? "")
+    /Select table|No table|Table \d/.test(t.textContent ?? "")
   );
   expect(tableTrigger).toBeTruthy();
   await user.click(tableTrigger!);
@@ -65,14 +65,13 @@ describe("PosOrderScreen order-eligible tables", () => {
     const options = within(listbox).getAllByRole("option");
     const names = options.map((o) => o.textContent);
 
-    // Stored numbers render as-is (canonical rule: never prepend "T").
-    expect(names.some((n) => /1 — 4 seats/.test(n ?? ""))).toBe(true);
+    expect(names.some((n) => /Table 1 .* 4 seats/.test(n ?? ""))).toBe(true);
     const seated = names.find((n) => /Seated Reservation/.test(n ?? ""));
-    expect(seated).toMatch(/^2 /);
+    expect(seated).toMatch(/^Table 2 /);
     // Occupied without seating, needs_cleaning, and maintenance stay hidden.
-    expect(names.some((n) => /^3 /.test(n ?? ""))).toBe(false);
-    expect(names.some((n) => /^4 /.test(n ?? ""))).toBe(false);
-    expect(names.some((n) => /^5 /.test(n ?? ""))).toBe(false);
+    expect(names.some((n) => /^Table 3 /.test(n ?? ""))).toBe(false);
+    expect(names.some((n) => /^Table 4 /.test(n ?? ""))).toBe(false);
+    expect(names.some((n) => /^Table 5 /.test(n ?? ""))).toBe(false);
     expect(container.textContent).not.toMatch(
       /aaaaaaaa-1111|bbbbbbbb-2222/
     );

@@ -15,7 +15,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Card, CardContent } from "@/components/ui/card";
-import { Clock, CreditCard, AlertCircle, Info, Calendar as CalendarIcon, Users, AlertTriangle, Bell, X, CheckCircle } from "lucide-react";
+import { Clock, CreditCard, AlertCircle, Info, Calendar as CalendarIcon, Users, AlertTriangle, Bell, X, CheckCircle, Plus, Trash2, Sparkles } from "lucide-react";
 import { LoadingSpinner } from "@/components/shared";
 import { useReservations, useCheckAvailability, useReservationPolicy, useTimeSlots } from "@/lib/hooks";
 import { useCustomers } from "@/lib/hooks";
@@ -25,10 +25,13 @@ import type {
   ReservationFormData,
   Table,
   EventType,
+  BookingScope,
   ReservationPolicy,
   AvailabilityCheckResult,
   TimeSlot,
   TimeSlotsResult,
+  ReservationRequest,
+  ReservationRequestCategory,
 } from "@/lib/types";
 
 interface ReservationFormProps {
@@ -37,6 +40,14 @@ interface ReservationFormProps {
   isLoading?: boolean;
   submitLabel?: string;
 }
+
+const REQUEST_CATEGORY_LABEL: Record<ReservationRequestCategory, string> = {
+  seating: "Seating preference",
+  accessibility: "Accessibility",
+  dietary: "Dietary",
+  occasion: "Occasion",
+  other: "Other",
+};
 
 interface FormErrors {
   customer_id?: string;
@@ -69,6 +80,7 @@ export function ReservationForm({
     source: initialData?.source ?? "walk_in",
     special_requests: initialData?.special_requests ?? "",
     event_type: initialData?.event_type ?? undefined,
+    booking_scope: initialData?.booking_scope ?? "standard",
     status: initialData?.status,
   });
   const [reservationFor, setReservationFor] = useState<"registered" | "guest">(
@@ -81,6 +93,12 @@ export function ReservationForm({
     String(initialData?.party_size ?? 2)
   );
   const [availableTables, setAvailableTables] = useState<Table[]>([]);
+  const [requests, setRequests] = useState<ReservationRequest[]>(
+    initialData?.requests ?? []
+  );
+  const [requestCategory, setRequestCategory] =
+    useState<ReservationRequestCategory>("seating");
+  const [requestValue, setRequestValue] = useState("");
   // Operationally unusable tables are never selectable, even if a cached
   // availability response still lists them. The backend enforces the same rule.
   const [isCheckingAvailability, setIsCheckingAvailability] = useState(false);
@@ -255,6 +273,8 @@ export function ReservationForm({
   });
   useEffect(() => {
     if (!tablesReady) return;
+    // Also ensure we have fresh availability data (not stale from previous query)
+    if (fetchAvailableTables.isFetching) return;
     // Pristine edit state (untouched initial selection on its original
     // slot) is never flagged — this also preserves the previous behavior
     // where the backend ignores the self-block quirk. Anything the user
@@ -278,7 +298,74 @@ export function ReservationForm({
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [assignableIdsKey, tablesReady]);
+  }, [assignableIdsKey, tablesReady, fetchAvailableTables.dataUpdatedAt]);
+
+  const requestSignature = JSON.stringify(
+    requests.map((request) => [request.category, request.label, request.value])
+  );
+
+  useEffect(() => {
+    if (
+      requests.length === 0 ||
+      !formData.reservation_date ||
+      !formData.reservation_time
+    ) {
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      checkAvailability.mutate(
+        {
+          reservation_date: formData.reservation_date,
+          reservation_time: formData.reservation_time as string,
+          party_size: parseInt(partySizeInput) || formData.party_size,
+          exclude_reservation_id: initialData?.id,
+          requests,
+        },
+        {
+          onSuccess: (response) => {
+            const suggested = response.data.data?.table;
+            if (suggested && !tableTouchedRef.current) {
+              selectedTableLabelRef.current = suggested.number;
+              setFormData((previous) =>
+                previous.table_id === suggested.id
+                  ? previous
+                  : { ...previous, table_id: suggested.id }
+              );
+              setTableConflict(null);
+            }
+          },
+        }
+      );
+    }, 400);
+
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    requestSignature,
+    formData.reservation_date,
+    formData.reservation_time,
+    formData.party_size,
+    initialData?.id,
+  ]);
+
+  function addStructuredRequest() {
+    const value = requestValue.trim();
+    const label =
+      value || REQUEST_CATEGORY_LABEL[requestCategory] || "Special request";
+
+    setRequests((previous) => [
+      ...previous,
+      {
+        category: requestCategory,
+        label,
+        value: value || null,
+        priority: "normal",
+        status: "pending",
+      },
+    ]);
+    setRequestValue("");
+  }
 
   function validate(): FormErrors {
     const errs: FormErrors = {};
@@ -354,6 +441,9 @@ export function ReservationForm({
         guest_email: reservationFor === "guest" ? formData.guest_email?.trim() || undefined : undefined,
         table_id: formData.table_id || undefined,
         special_requests: formData.special_requests?.trim() || undefined,
+        requests: requests.length
+          ? requests.map(({ id: _id, ...request }) => request)
+          : undefined,
         party_size: parseInt(partySizeInput),
       });
     }
@@ -668,24 +758,30 @@ export function ReservationForm({
               Select Date & Time above to auto-fill the best available table
             </p>
           )}
-          {formData.party_size > 12 && (
+          {formData.party_size > 50 && (
             <p className="text-xs text-blue-600 dark:text-blue-400 flex items-center gap-1">
               <Info className="h-3 w-3" />
-              Party size exceeds maximum table capacity (12). This requires a full venue rental or multiple tables.
+              Party size exceeds maximum table capacity (50). This requires a full venue rental or multiple tables.
+            </p>
+          )}
+          {formData.party_size > 12 && formData.party_size <= 50 && (
+            <p className="text-xs text-amber-600 dark:text-amber-400 flex items-center gap-1">
+              <Info className="h-3 w-3" />
+              Party size exceeds typical table capacity (12). Consider multiple tables or full venue rental.
             </p>
           )}
         </div>
 
         <div className="space-y-2">
           <Label>Table (optional)</Label>
-          {formData.party_size > 12 ? (
+          {formData.party_size > 50 ? (
             <div className="p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg" key="full-venue">
               <p className="text-sm font-medium text-blue-800 dark:text-blue-200 flex items-center gap-2">
                 <Users className="h-4 w-4" />
                 Full Venue Rental
               </p>
               <p className="text-xs text-blue-600 dark:text-blue-400 mt-1">
-                For parties larger than 12, the entire venue will be reserved. Table selection is not required.
+                For parties larger than 50, the entire venue will be reserved. Table selection is not required.
               </p>
             </div>
           ) : (
@@ -807,6 +903,31 @@ export function ReservationForm({
         </Select>
       </div>
 
+      <div className="space-y-2">
+        <Label htmlFor="booking-scope">Booking Type</Label>
+        <Select
+          value={formData.booking_scope ?? "standard"}
+          onValueChange={(value) =>
+            setFormData((prev) => ({
+              ...prev,
+              booking_scope: (value || "standard") as BookingScope,
+            }))
+          }
+        >
+          <SelectTrigger id="booking-scope" className="w-full">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="standard">Standard reservation</SelectItem>
+            <SelectItem value="half_day">Half-day event</SelectItem>
+            <SelectItem value="whole_day">Whole-day event</SelectItem>
+          </SelectContent>
+        </Select>
+        <p className="text-xs text-muted-foreground">
+          Use half-day or whole-day only for events that occupy more than a standard table booking.
+        </p>
+      </div>
+
       {/* Policy notice banner */}
       {policy && formData.party_size && (formData.party_size >= policy.card_threshold || (() => {
         const dayOfWeek = new Date(formData.reservation_date).getDay();
@@ -856,6 +977,120 @@ export function ReservationForm({
 
       {/* NOTE: no status selector — the backend update() endpoint does not
           accept status changes; use the row/status actions instead. */}
+
+      <div className="space-y-3 rounded-lg border p-4">
+        <div className="flex items-start gap-2">
+          <Sparkles className="mt-0.5 h-4 w-4 text-muted-foreground" />
+          <div>
+            <Label>Table Preferences & Requests</Label>
+            <p className="text-xs text-muted-foreground">
+              Seating and accessibility requests are matched against the best
+              available table. Dietary and occasion notes are sent to staff.
+            </p>
+          </div>
+        </div>
+
+        <div className="grid gap-2 sm:grid-cols-[160px_1fr_auto]">
+          <Select
+            value={requestCategory}
+            onValueChange={(value) =>
+              setRequestCategory(
+                (value ?? "seating") as ReservationRequestCategory
+              )
+            }
+          >
+            <SelectTrigger className="h-9">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {Object.entries(REQUEST_CATEGORY_LABEL).map(([key, label]) => (
+                <SelectItem key={key} value={key}>
+                  {label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Input
+            value={requestValue}
+            onChange={(event) => setRequestValue(event.target.value)}
+            placeholder={
+              requestCategory === "accessibility"
+                ? "e.g. Wheelchair access"
+                : requestCategory === "dietary"
+                  ? "e.g. Vegetarian, nut allergy"
+                  : requestCategory === "occasion"
+                    ? "e.g. Birthday"
+                    : "e.g. Window, Patio, Near entrance"
+            }
+            className="h-9"
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                event.preventDefault();
+                addStructuredRequest();
+              }
+            }}
+          />
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={addStructuredRequest}
+          >
+            <Plus className="h-3.5 w-3.5" />
+            Add
+          </Button>
+        </div>
+
+        {requests.length > 0 && (
+          <div className="flex flex-wrap gap-1.5">
+            {requests.map((request, index) => (
+              <span
+                key={`${request.category}-${request.label}-${index}`}
+                className="inline-flex items-center gap-1 rounded-full border bg-muted/40 px-2 py-1 text-xs"
+              >
+                <span className="font-medium">
+                  {REQUEST_CATEGORY_LABEL[request.category]}:
+                </span>
+                {request.label}
+                <button
+                  type="button"
+                  aria-label={`Remove ${request.label}`}
+                  onClick={() =>
+                    setRequests((previous) =>
+                      previous.filter((_, itemIndex) => itemIndex !== index)
+                    )
+                  }
+                  className="rounded-full p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+                >
+                  <Trash2 className="h-3 w-3" />
+                </button>
+              </span>
+            ))}
+          </div>
+        )}
+
+        {requests.length > 0 && checkAvailability.data?.data?.data?.assignment && (
+          <div className="rounded-lg bg-muted/40 px-3 py-2 text-xs">
+            {checkAvailability.data.data.data.table ? (
+              <p>
+                Best match:{" "}
+                <span className="font-medium">
+                  Table {checkAvailability.data.data.data.table.number}
+                </span>
+                {checkAvailability.data.data.data.assignment.unmet_requests
+                  .length > 0
+                  ? ` - ${checkAvailability.data.data.data.assignment.unmet_requests.length} preference(s) could not be matched.`
+                  : " - all table preferences matched."}
+              </p>
+            ) : (
+              <p className="text-amber-700 dark:text-amber-300">
+                No table currently satisfies this slot. The reservation can
+                still be saved without a table.
+              </p>
+            )}
+          </div>
+        )}
+      </div>
 
       <div className="space-y-2">
         <Label htmlFor="special-requests">Special Requests</Label>
@@ -912,7 +1147,7 @@ export function ReservationForm({
               onClick={() => setShowDurationLimitAlert(false)}
             >
               <X className="h-4 w-4 mr-2" />
-              I'll Adjust Times
+              I&apos;ll Adjust Times
             </Button>
             <Button 
               className="flex-1"
@@ -961,12 +1196,12 @@ export function ReservationForm({
               Suggested Guest Notification Script
             </h4>
             <p className="text-sm text-blue-700 dark:text-blue-300 italic">
-              "Excuse me, {timeLimitDetails.guestName}. We hope you've had a wonderful dining experience with us today. 
+              &quot;Excuse me, {timeLimitDetails.guestName}. We hope you&apos;ve had a wonderful dining experience with us today. 
               As a courtesy, we wanted to let you know that your reserved dining time of 
               {Math.floor(timeLimitDetails.maxMinutes / 60)} hour(s) {timeLimitDetails.maxMinutes % 60} minute(s) 
               is approaching its conclusion. We have another reservation scheduled for this table shortly. 
               Would you like to enjoy a dessert or coffee to conclude your meal, or shall we prepare your bill? 
-              Thank you for choosing us, and we look forward to welcoming you again soon!"
+              Thank you for choosing us, and we look forward to welcoming you again soon!&quot;
             </p>
           </div>
 

@@ -3,13 +3,14 @@
 import { useState } from "react";
 import { PageHeader, ConfirmDialog, CardGridSkeleton, ErrorState, EmptyState } from "@/components/shared";
 import { useAuth } from "@/providers/AuthProvider";
-import { canCreateTable, canEditTable, canArchiveTable, canChangeTableStatus, canView } from "@/lib/utils/permissions";
+import { canCreateTable, canEditTable, canArchiveTable, canChangeTableStatus, canView, canEdit as canEditReservation } from "@/lib/utils/permissions";
 import {
   TableDetailsModal,
   TableStats,
   TableForm,
 } from "@/features/tables";
 import { TableGridView } from "@/features/tables/TableGridView";
+import { ReservationDetailsModal } from "@/features/reservations";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -26,7 +27,7 @@ import {
 } from "@/components/ui/select";
 import { Plus, LayoutGrid } from "lucide-react";
 import { useTables } from "@/lib/hooks";
-import type { Table as TableType, TableStatus, TableFormData } from "@/lib/types";
+import type { Table as TableType, TableStatus, TableFormData, Reservation } from "@/lib/types";
 import { formatLabel } from "@/lib/utils";
 import { toast } from "sonner";
 
@@ -36,6 +37,7 @@ export default function TablesPage() {
   const [restoreTarget, setRestoreTarget] = useState<TableType | null>(null);
   const [showArchived, setShowArchived] = useState(false);
   const [viewTargetId, setViewTargetId] = useState<string | null>(null);
+  const [reservationTarget, setReservationTarget] = useState<Reservation | null>(null);
   const [showTableDialog, setShowTableDialog] = useState(false);
   const [editingTable, setEditingTable] = useState<TableType | null>(null);
   const [statusActionTarget, setStatusActionTarget] = useState<{
@@ -51,6 +53,7 @@ export default function TablesPage() {
   const canEdit = canEditTable(user?.role);
   const canArchive = canArchiveTable(user?.role);
   const canChangeStatus = canChangeTableStatus(user?.role);
+  const canManageReservations = canEditReservation(user?.role, "reservations");
 
   const visibleTables = showArchived
     ? allTables
@@ -291,7 +294,28 @@ export default function TablesPage() {
           open={!!viewTarget}
           onOpenChange={(open) => !open && setViewTargetId(null)}
           canViewOrders={canView(user?.role, "orders")}
+          canViewCustomerInfo={canView(user?.role, "customers")}
+          canManageReservations={canManageReservations}
+          canEditTable={canEdit}
+          onViewReservation={(reservation) => {
+            setViewTargetId(null);
+            setReservationTarget(reservation);
+          }}
+          onEditTable={(table) => {
+            setViewTargetId(null);
+            setEditingTable(table);
+            setShowTableDialog(true);
+          }}
         />
+
+        {reservationTarget && (
+          <ReservationDetailsModal
+            reservation={reservationTarget}
+            open
+            onOpenChange={(open) => !open && setReservationTarget(null)}
+            canManage={canManageReservations}
+          />
+        )}
       </div>
     </div>
   );

@@ -12,6 +12,7 @@ import type {
   ReservationPolicy,
   AvailabilityCheckResult,
   TimeSlotsResult,
+  ReservationRequest,
 } from "@/lib/types";
 
 export function useReservations(params?: QueryParams) {
@@ -120,7 +121,56 @@ export function useReservations(params?: QueryParams) {
     },
   });
 
-  return { list, availableTables, create, update, cancel, checkIn, complete, confirm, processNoShow, archive };
+  const addRequest = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: ReservationRequest }) =>
+      api.post<ApiResponse<ReservationRequest>>(`/reservations/${id}/requests`, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["reservations"] });
+      queryClient.invalidateQueries({ queryKey: ["tables"] });
+    },
+  });
+
+  const updateRequest = useMutation({
+    mutationFn: ({
+      id,
+      requestId,
+      data,
+    }: {
+      id: string;
+      requestId: string;
+      data: Partial<ReservationRequest>;
+    }) =>
+      api.patch<ApiResponse<ReservationRequest>>(`/reservations/${id}/requests/${requestId}`, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["reservations"] });
+      queryClient.invalidateQueries({ queryKey: ["tables"] });
+    },
+  });
+
+  const removeRequest = useMutation({
+    mutationFn: ({ id, requestId }: { id: string; requestId: string }) =>
+      api.delete<ApiResponse<null>>(`/reservations/${id}/requests/${requestId}`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["reservations"] });
+      queryClient.invalidateQueries({ queryKey: ["tables"] });
+    },
+  });
+
+  return {
+    list,
+    availableTables,
+    create,
+    update,
+    cancel,
+    checkIn,
+    complete,
+    confirm,
+    processNoShow,
+    archive,
+    addRequest,
+    updateRequest,
+    removeRequest,
+  };
 }
 
 export function useReservation(id: string) {
@@ -172,7 +222,13 @@ export function useReservationPolicy() {
 
 export function useCheckAvailability() {
   return useMutation({
-    mutationFn: (data: { reservation_date: string; reservation_time: string; party_size: number }) =>
+    mutationFn: (data: {
+      reservation_date: string;
+      reservation_time: string;
+      party_size: number;
+      exclude_reservation_id?: string;
+      requests?: ReservationRequest[];
+    }) =>
       api.post<ApiResponse<AvailabilityCheckResult>>("/reservations/check-availability", data),
   });
 }

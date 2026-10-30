@@ -20,9 +20,18 @@ import {
   Pencil,
   Archive,
   MapPin,
+  Phone,
+  CalendarDays,
+  MessageSquare,
 } from "lucide-react";
-import type { Reservation, ReservationStatus } from "@/lib/types";
+import type { BookingScope, Reservation, ReservationStatus } from "@/lib/types";
 import { cn } from "@/lib/utils";
+
+const BOOKING_SCOPE_LABEL: Record<BookingScope, string> = {
+  standard: "Standard",
+  half_day: "Half-day",
+  whole_day: "Whole-day",
+};
 
 const STATUS_GLOW: Record<ReservationStatus, string> = {
   pending:
@@ -149,8 +158,22 @@ export function ReservationTable({
       {reservations.map((res) => (
         <div
           key={res.id}
+          role={onView ? "button" : undefined}
+          tabIndex={onView ? 0 : undefined}
+          onClick={onView ? () => onView(res) : undefined}
+          onKeyDown={
+            onView
+              ? (event) => {
+                  if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    onView(res);
+                  }
+                }
+              : undefined
+          }
           className={cn(
             "relative flex flex-col rounded-xl border bg-card p-4 transition-all",
+            onView && "cursor-pointer hover:-translate-y-0.5 hover:shadow-md",
             STATUS_GLOW[res.status]
           )}
         >
@@ -163,7 +186,10 @@ export function ReservationTable({
               {onView ? (
                 <button
                   type="button"
-                  onClick={() => onView(res)}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onView(res);
+                  }}
                   className="font-semibold text-sm hover:underline text-left"
                 >
                   {res.reservation_number}
@@ -179,11 +205,17 @@ export function ReservationTable({
               <p className="text-xs text-muted-foreground mt-0.5">
                 {res.customer?.name ?? res.guest_name ?? "—"}
               </p>
+              {(res.customer?.phone || res.guest_phone) && (
+                <p className="text-xs text-muted-foreground mt-0.5 flex items-center gap-1">
+                  <Phone className="h-2.5 w-2.5" />
+                  {res.customer?.phone ?? res.guest_phone}
+                </p>
+              )}
             </div>
 
             <DropdownMenu>
               <DropdownMenuTrigger
-                render={<Button variant="ghost" size="icon-sm" />}
+                render={<Button variant="ghost" size="icon-sm" onClick={(event) => event.stopPropagation()} />}
               >
                 <MoreHorizontal className="h-4 w-4" />
                 <span className="sr-only">Actions</span>
@@ -245,20 +277,50 @@ export function ReservationTable({
               <Clock className="h-3.5 w-3.5 shrink-0" />
               <span>
                 {formatDate(res.reservation_date)} · {formatTime(res.reservation_time)}
+                {res.end_time ? ` – ${formatTime(res.end_time)}` : ""}
               </span>
             </div>
             <div className="flex items-center gap-2 text-muted-foreground">
               <Users className="h-3.5 w-3.5 shrink-0" />
               <span>{res.party_size} guests</span>
             </div>
+            {res.event_type && (
+              <div className="flex items-center gap-2 text-muted-foreground">
+                <CalendarDays className="h-3.5 w-3.5 shrink-0" />
+                <span>{res.event_type}</span>
+              </div>
+            )}
             <div className="flex items-center gap-2 text-muted-foreground">
               <MapPin className="h-3.5 w-3.5 shrink-0" />
               <span>{res.table ? res.table.number : "No table"}</span>
             </div>
           </div>
 
-          <div className="mt-3 pt-3 border-t border-current/10">
+          <div className="mt-3 pt-3 border-t border-current/10 flex items-center gap-2">
             <StatusBadge status={res.status} className={res.archived_at ? "opacity-70" : undefined} />
+            {res.booking_scope && res.booking_scope !== "standard" && (
+              <span className="inline-flex items-center rounded-full border border-violet-200 bg-violet-50 px-2 py-0.5 text-[10px] font-medium text-violet-700 dark:border-violet-800 dark:bg-violet-900/20 dark:text-violet-300">
+                {BOOKING_SCOPE_LABEL[res.booking_scope]}
+              </span>
+            )}
+            {(res.requests_count ?? res.requests?.length ?? 0) > 0 && (
+              <span
+                className={cn(
+                  "ml-auto inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-medium",
+                  (res.unmet_requests_count ?? 0) > 0
+                    ? "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-300"
+                    : "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-900/20 dark:text-emerald-300"
+                )}
+                title={
+                  (res.unmet_requests_count ?? 0) > 0
+                    ? `${res.unmet_requests_count} request(s) could not be matched`
+                    : "All table requests matched"
+                }
+              >
+                <MessageSquare className="h-3 w-3" />
+                {res.requests_count ?? res.requests?.length}
+              </span>
+            )}
           </div>
         </div>
       ))}

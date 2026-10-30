@@ -3,14 +3,27 @@ import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { TableDetailsModal } from "../TableDetailsModal";
-import type { Order, Table } from "@/lib/types";
+import type { Order, Reservation, Table } from "@/lib/types";
 
-const { mockUseTableActiveOrders } = vi.hoisted(() => ({
+const { mockUseTableActiveOrders, mockUseTableSchedule, mockApi } = vi.hoisted(() => ({
   mockUseTableActiveOrders: vi.fn(),
+  mockUseTableSchedule: vi.fn(),
+  mockApi: {
+    get: vi.fn(),
+    post: vi.fn(),
+    put: vi.fn(),
+    patch: vi.fn(),
+    delete: vi.fn(),
+  },
 }));
 
 vi.mock("@/lib/hooks", () => ({
   useTableActiveOrders: mockUseTableActiveOrders,
+  useTableSchedule: mockUseTableSchedule,
+}));
+
+vi.mock("@/lib/api/client", () => ({
+  default: mockApi,
 }));
 
 function makeTable(overrides: Partial<Table> = {}): Table {
@@ -112,9 +125,17 @@ function queryState({
 function renderModal({
   table = makeTable(),
   canViewOrders = true,
+  canViewCustomerInfo = true,
+  canManageReservations = false,
+  canEditTable = false,
+  onEditTable,
 }: {
   table?: Table | null;
   canViewOrders?: boolean;
+  canViewCustomerInfo?: boolean;
+  canManageReservations?: boolean;
+  canEditTable?: boolean;
+  onEditTable?: (table: Table) => void;
 } = {}) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
@@ -127,6 +148,10 @@ function renderModal({
         open
         onOpenChange={vi.fn()}
         canViewOrders={canViewOrders}
+        canViewCustomerInfo={canViewCustomerInfo}
+        canManageReservations={canManageReservations}
+        canEditTable={canEditTable}
+        onEditTable={onEditTable}
       />
     </QueryClientProvider>
   );
@@ -136,6 +161,21 @@ describe("TableDetailsModal", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockUseTableActiveOrders.mockReturnValue(queryState());
+    mockUseTableSchedule.mockReturnValue({
+      data: {
+        table: makeTable(),
+        date: "2026-10-27",
+        days: 7,
+        buffer_minutes: 15,
+        next_reservation: null,
+        reservations: [],
+        slots: [],
+      },
+      isLoading: false,
+      isError: false,
+      isFetching: false,
+      refetch: vi.fn(),
+    });
   });
 
   it("shows table information and the empty active-order state", async () => {
@@ -219,5 +259,241 @@ describe("TableDetailsModal", () => {
       await screen.findByText(/Live updates are temporarily unavailable/i)
     ).toBeInTheDocument();
     expect(screen.getByText("Order ORD-1001")).toBeInTheDocument();
+  });
+
+  it("shows the current seated customer and contact details", async () => {
+    mockUseTableSchedule.mockReturnValue({
+      data: {
+        table: makeTable(),
+        date: "2026-10-27",
+        days: 7,
+        buffer_minutes: 15,
+        current_session: {
+          id: "res-current",
+          reservation_number: "RES-001",
+          guest_name: "Alice Registered",
+          party_size: 2,
+          reservation_date: "2026-10-27",
+          reservation_time: "18:00",
+          status: "seated",
+          customer: {
+            id: "cust-1",
+            name: "Alice Registered",
+            phone: "09171234567",
+            email: "alice@example.com",
+            customer_type: "registered",
+          },
+          requests: [],
+        },
+        next_reservation: null,
+        upcoming_reservations: [],
+        reservations: [],
+        slots: [],
+      },
+      isLoading: false,
+      isError: false,
+      isFetching: false,
+      refetch: vi.fn(),
+    });
+    renderModal();
+
+    const dialog = await screen.findByRole("dialog");
+    const scope = within(dialog);
+    expect(scope.getByText("Alice Registered")).toBeInTheDocument();
+    expect(scope.getByText("Regular")).toBeInTheDocument();
+    expect(scope.getByText("09171234567")).toBeInTheDocument();
+    expect(scope.getByText("alice@example.com")).toBeInTheDocument();
+  });
+
+  it("shows next and upcoming reservations without mixing customers", async () => {
+    mockUseTableSchedule.mockReturnValue({
+      data: {
+        table: makeTable(),
+        date: "2026-10-27",
+        days: 7,
+        buffer_minutes: 15,
+        current_session: null,
+        next_reservation: {
+          id: "res-next",
+          reservation_number: "RES-002",
+          guest_name: "Bob Guest",
+          party_size: 4,
+          reservation_date: "2026-10-28",
+          reservation_time: "19:00",
+          status: "confirmed",
+          customer: null,
+          requests_count: 1,
+          unmet_requests_count: 0,
+        },
+        upcoming_reservations: [
+          {
+            id: "res-upcoming",
+            reservation_number: "RES-003",
+            guest_name: "Carol Guest",
+            party_size: 3,
+            reservation_date: "2026-10-29",
+            reservation_time: "20:00",
+            status: "pending",
+            customer: null,
+            requests: [],
+          },
+        ],
+        reservations: [],
+        slots: [],
+      },
+      isLoading: false,
+      isError: false,
+      isFetching: false,
+      refetch: vi.fn(),
+    });
+    renderModal();
+
+    const dialog = await screen.findByRole("dialog");
+    const scope = within(dialog);
+    expect(scope.getByText("Bob Guest")).toBeInTheDocument();
+    expect(scope.getByText("Carol Guest")).toBeInTheDocument();
+    expect(scope.getAllByText("Guest").length).toBeGreaterThan(0);
+  });
+
+  it("updates a request from the staff alerts when allowed", async () => {
+    mockApi.patch.mockResolvedValue({
+      data: { success: true, message: "", data: {} },
+    });
+    mockUseTableSchedule.mockReturnValue({
+      data: {
+        table: makeTable(),
+        date: "2026-10-27",
+        days: 7,
+        buffer_minutes: 15,
+        current_session: {
+          id: "res-current",
+          reservation_number: "RES-001",
+          guest_name: "Alice Registered",
+          party_size: 2,
+          reservation_date: "2026-10-27",
+          reservation_time: "18:00",
+          status: "seated",
+          customer: {
+            id: "cust-1",
+            name: "Alice Registered",
+            customer_type: "registered",
+          },
+          requests: [
+            {
+              id: "req-1",
+              category: "dietary",
+              label: "Nut allergy",
+              status: "pending",
+              priority: "high",
+              is_matched: false,
+            },
+          ],
+        },
+        next_reservation: null,
+        upcoming_reservations: [],
+        reservations: [],
+        slots: [],
+      },
+      isLoading: false,
+      isError: false,
+      isFetching: false,
+      refetch: vi.fn(),
+    });
+    renderModal({ canManageReservations: true });
+
+    const dialog = await screen.findByRole("dialog");
+    const scope = within(dialog);
+    await userEvent.click(scope.getByRole("button", { name: /Acknowledge/i }));
+
+    expect(mockApi.patch).toHaveBeenCalledWith(
+      "/reservations/res-current/requests/req-1",
+      { status: "acknowledged" }
+    );
+  });
+
+  it("hides request actions when the role cannot manage reservations", async () => {
+    mockUseTableSchedule.mockReturnValue({
+      data: {
+        table: makeTable(),
+        date: "2026-10-27",
+        days: 7,
+        buffer_minutes: 15,
+        current_session: {
+          id: "res-current",
+          reservation_number: "RES-001",
+          guest_name: "Alice Registered",
+          party_size: 2,
+          reservation_date: "2026-10-27",
+          reservation_time: "18:00",
+          status: "seated",
+          customer: {
+            id: "cust-1",
+            name: "Alice Registered",
+            customer_type: "registered",
+          },
+          requests: [
+            {
+              id: "req-1",
+              category: "dietary",
+              label: "Nut allergy",
+              status: "pending",
+              priority: "normal",
+              is_matched: null,
+            },
+          ],
+        },
+        next_reservation: null,
+        upcoming_reservations: [],
+        reservations: [],
+        slots: [],
+      },
+      isLoading: false,
+      isError: false,
+      isFetching: false,
+      refetch: vi.fn(),
+    });
+    renderModal({ canManageReservations: false });
+
+    const dialog = await screen.findByRole("dialog");
+    expect(
+      within(dialog).queryByRole("button", { name: /Acknowledge/i })
+    ).toBeNull();
+  });
+
+  it("shows table location descriptions and hides order contact without permission", async () => {
+    mockUseTableActiveOrders.mockReturnValue(
+      queryState({
+        orders: [
+          makeOrder({
+            customer: {
+              id: "cust-2",
+              name: "Order Customer",
+              phone: "09170009999",
+              email: "order@example.com",
+              customer_type: "registered",
+              loyalty_points: 0,
+              total_orders: 0,
+              total_spent: 0,
+              visit_count: 0,
+              is_active: true,
+              created_at: "",
+              updated_at: "",
+            },
+            customer_id: "cust-2",
+          }),
+        ],
+      })
+    );
+    renderModal({
+      table: makeTable({ location_description: "Near the kitchen door" }),
+      canViewCustomerInfo: false,
+    });
+
+    const dialog = await screen.findByRole("dialog");
+    const scope = within(dialog);
+    expect(scope.getByText("Near the kitchen door")).toBeInTheDocument();
+    expect(scope.getAllByText("Order Customer").length).toBeGreaterThan(0);
+    expect(scope.queryByText("09170009999")).toBeNull();
+    expect(scope.queryByText("order@example.com")).toBeNull();
   });
 });

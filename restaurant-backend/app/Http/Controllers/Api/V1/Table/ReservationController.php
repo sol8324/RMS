@@ -9,6 +9,9 @@ use App\Models\Reservation;
 use App\Models\Customer;
 use App\Models\Table;
 use App\Services\AuditLogger;
+use App\Services\ReservationAvailabilityService;
+use App\Services\ReservationRequestService;
+use App\Services\StaffNotificationService;
 use App\Services\TableDiningPolicy;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
@@ -19,6 +22,12 @@ class ReservationController extends Controller
 {
     private const BLOCKING_STATUSES = ['pending', 'confirmed', 'seated'];
 
+    public function __construct(
+        private readonly ReservationAvailabilityService $availability,
+        private readonly ReservationRequestService $requestService
+    ) {
+    }
+
     private function overlapsActiveReservation(
         string $tableId,
         string $date,
@@ -26,35 +35,14 @@ class ReservationController extends Controller
         int $durationMinutes = 90,
         ?string $excludeId = null
     ): bool {
-        // Normalize: callers may pass a full ISO datetime; only the date part is relevant here.
         $date = Carbon::parse($date)->toDateString();
-        $slotStart = Carbon::parse("{$date} {$time}");
-        $slotEnd = $slotStart->copy()->addMinutes($durationMinutes);
 
-        $query = Reservation::where('table_id', $tableId)
-            ->whereIn('status', self::BLOCKING_STATUSES)
-            ->whereDate('reservation_date', $date);
-
-        if ($excludeId !== null) {
-            $query->where('id', '!=', $excludeId);
-        }
-
-        foreach ($query->get() as $reservation) {
-            if (! $reservation->reservation_time) {
-                continue;
-            }
-            $resStart = Carbon::parse(
-                $reservation->reservation_date->toDateString().' '.$reservation->reservation_time
-            );
-            $resDuration = $reservation->duration_minutes ?? 90;
-            $resEnd = $resStart->copy()->addMinutes($resDuration);
-
-            if ($slotStart->lt($resEnd) && $resStart->lt($slotEnd)) {
-                return true;
-            }
-        }
-
-        return false;
+        return $this->availability->tableHasConflict(
+            $tableId,
+            Carbon::parse("{$date} {$time}"),
+            $durationMinutes,
+            $excludeId
+        );
     }
 
     /**
@@ -62,17 +50,7 @@ class ReservationController extends Controller
      */
     private function getReservationPolicy(): array
     {
-        $settings = \App\Models\RestaurantSetting::first();
-        return [
-            'card_threshold' => $settings->reservation_card_threshold ?? 6,
-            'no_show_fee' => $settings->reservation_no_show_fee ?? 15.00,
-            'flag_threshold' => $settings->reservation_no_show_flag_threshold ?? 2,
-            'deposit_percentage' => $settings->reservation_deposit_percentage ?? 50.00,
-            'cancellation_window' => $settings->reservation_cancellation_window_minutes ?? 15,
-            'regular_duration' => $settings->reservation_regular_duration_minutes ?? 180,
-            'large_duration' => $settings->reservation_large_duration_minutes ?? 240,
-            'weekend_days' => $settings->reservation_weekend_days ?? [5, 6], // Friday=5, Saturday=6
-        ];
+        return $this->availability->policy();
     }
 
     /**
@@ -80,7 +58,7 @@ class ReservationController extends Controller
      */
     private function calculateDuration(int $partySize, array $policy): int
     {
-        return $partySize <= 4 ? $policy['regular_duration'] : $policy['large_duration'];
+        return $this->availability->durationFor($partySize, $policy);
     }
 
     /**
@@ -136,23 +114,25 @@ class ReservationController extends Controller
     /**
      * Find the best available table for a party size and time slot.
      */
-    private function findBestAvailableTable(int $partySize, string $date, string $time, int $durationMinutes): ?Table
-    {
-        $tables = Table::sortByNumber(
-            Table::where('is_active', true)
-                ->whereNotIn('status', ['needs_cleaning', 'maintenance'])
-                ->where('capacity', '>=', $partySize)
-                ->get(),
-            capacityFirst: true
+    private function findBestAvailableTable(
+        int $partySize,
+        string $date,
+        string $time,
+        int $durationMinutes,
+        array $requests = [],
+        ?string $excludeId = null,
+        bool $lock = false
+    ): ?Table {
+        $assignment = $this->availability->bestAssignment(
+            $partySize,
+            Carbon::parse($date)->toDateString(),
+            $time,
+            $requests,
+            $excludeId,
+            $lock
         );
 
-        foreach ($tables as $table) {
-            if ($this->isTableAvailableForDuration($table->id, $date, $time, $durationMinutes)) {
-                return $table;
-            }
-        }
-
-        return null;
+        return $assignment['table'] ?? null;
     }
 
     /**
@@ -173,14 +153,29 @@ class ReservationController extends Controller
             'reservation_date' => 'required|date|after_or_equal:today',
             'reservation_time' => 'required|date_format:H:i',
             'party_size' => 'required|integer|min:1|max:50',
+            'exclude_reservation_id' => 'sometimes|nullable|uuid',
+            'requests' => 'sometimes|array|max:20',
+            'requests.*.category' => 'required_with:requests|in:seating,accessibility,dietary,occasion,other',
+            'requests.*.label' => 'required_with:requests|string|max:120',
+            'requests.*.value' => 'nullable|string|max:120',
+            'requests.*.details' => 'nullable|string|max:1000',
+            'requests.*.priority' => 'sometimes|in:normal,high',
         ]);
 
         $policy = $this->getReservationPolicy();
-        $duration = $this->calculateDuration($validated['party_size'], $policy);
-        $table = $this->findBestAvailableTable($validated['party_size'], $validated['reservation_date'], $validated['reservation_time'], $duration);
+        $date = Carbon::parse($validated['reservation_date'])->toDateString();
+        $duration = $this->calculateDuration((int) $validated['party_size'], $policy);
+        $assignment = $this->availability->bestAssignment(
+            (int) $validated['party_size'],
+            $date,
+            $validated['reservation_time'],
+            $validated['requests'] ?? [],
+            $validated['exclude_reservation_id'] ?? null
+        );
+        $table = $assignment['table'] ?? null;
 
-        $requiresCard = $this->requiresCard($validated['party_size'], $validated['reservation_date'], $policy);
-        $requiresDeposit = $this->requiresDeposit($validated['party_size'], $policy);
+        $requiresCard = $this->requiresCard((int) $validated['party_size'], $date, $policy);
+        $requiresDeposit = $this->requiresDeposit((int) $validated['party_size'], $policy);
 
         return $this->success([
             'available' => $table !== null,
@@ -188,15 +183,26 @@ class ReservationController extends Controller
                 'id' => $table->id,
                 'number' => $table->number,
                 'capacity' => $table->capacity,
+                'shape' => $table->shape,
+                'location' => $table->location,
+                'location_description' => $table->location_description,
+                'is_wheelchair_accessible' => (bool) $table->is_wheelchair_accessible,
+            ] : null,
+            'assignment' => $assignment ? [
+                'matched_requests' => $assignment['matched_requests'],
+                'unmet_requests' => $assignment['unmet_requests'],
+                'score' => $assignment['score'],
+                'buffer_minutes' => $assignment['buffer_minutes'],
             ] : null,
             'duration_minutes' => $duration,
-            'end_time' => Carbon::parse("{$validated['reservation_date']} {$validated['reservation_time']}")->addMinutes($duration)->format('H:i'),
+            'end_time' => Carbon::parse("{$date} {$validated['reservation_time']}")->addMinutes($duration)->format('H:i'),
             'requires_card' => $requiresCard,
             'requires_deposit' => $requiresDeposit,
-            'deposit_amount' => $requiresDeposit ? $this->calculateDepositAmount($validated['party_size'], $policy) : 0,
+            'deposit_amount' => $requiresDeposit ? $this->calculateDepositAmount((int) $validated['party_size'], $policy) : 0,
             'policy' => [
                 'card_threshold' => $policy['card_threshold'],
                 'weekend_days' => $policy['weekend_days'],
+                'turnover_buffer_minutes' => $policy['turnover_buffer'],
             ],
         ]);
     }
@@ -217,6 +223,7 @@ class ReservationController extends Controller
         $partySize = $validated['party_size'] ?? 1;
         $policy = $this->getReservationPolicy();
         $duration = $this->calculateDuration($partySize, $policy);
+        $buffer = $this->availability->bufferMinutes($policy);
 
         // Get all active reservations for the date
         $reservations = Reservation::where('reservation_date', $date)
@@ -255,7 +262,9 @@ class ReservationController extends Controller
                     foreach ($reservations as $res) {
                         if ($res->table_id !== $table->id) continue;
                         $resStart = Carbon::parse($res->reservation_date->toDateString() . ' ' . $res->reservation_time);
-                        $resEnd = $resStart->copy()->addMinutes($res->duration_minutes ?? $duration);
+                        $resEnd = $resStart->copy()
+                            ->addMinutes($res->duration_minutes ?? $duration)
+                            ->addMinutes($buffer);
 
                         if ($slotStart->lt($resEnd) && $resStart->lt($slotEnd)) {
                             $isOccupied = true;
@@ -303,7 +312,7 @@ class ReservationController extends Controller
 
     public function index(Request $request): JsonResponse
     {
-        $query = Reservation::with(['customer', 'table']);
+        $query = Reservation::with(['customer', 'table', 'requests']);
 
         // Archived reservations are hidden unless ?archived=1 (the frontend
         // "Archived" view scope sends this flag).
@@ -344,10 +353,16 @@ class ReservationController extends Controller
             'party_size' => $r->party_size,
             'reservation_date' => $r->reservation_date?->toDateString(),
             'reservation_time' => $r->reservation_time,
+            'end_time' => $r->end_time,
+            'duration_minutes' => $r->duration_minutes,
             'status' => $r->status,
             'source' => $r->source,
             'special_requests' => $r->special_requests,
+            'requests' => ReservationRequestService::serializeCollection($r->requests),
+            'requests_count' => $r->requests->count(),
+            'unmet_requests_count' => $r->requests->where('is_matched', false)->count(),
             'event_type' => $r->event_type,
+            'booking_scope' => $r->booking_scope,
             'customer' => $r->customer ? [
                 'id' => $r->customer->id,
                 'name' => $r->customer->name,
@@ -385,9 +400,18 @@ class ReservationController extends Controller
             'source' => 'sometimes|string|in:phone,online,walk_in,app',
             'special_requests' => 'nullable|string|max:2000',
             'event_type' => 'nullable|string|in:Birthday,Anniversary,Corporate,Wedding,Holiday Party,Graduation,Baby Shower,Bridal Shower,Rehearsal Dinner,Other',
+            'booking_scope' => 'sometimes|string|in:standard,half_day,whole_day',
             'card_on_file' => 'sometimes|boolean',
             'deposit_paid' => 'sometimes|boolean',
+            'requests' => 'sometimes|array|max:20',
+            'requests.*.category' => 'required_with:requests|in:seating,accessibility,dietary,occasion,other',
+            'requests.*.label' => 'required_with:requests|string|max:120',
+            'requests.*.value' => 'nullable|string|max:120',
+            'requests.*.details' => 'nullable|string|max:1000',
+            'requests.*.priority' => 'sometimes|in:normal,high',
         ]);
+
+        $validated['booking_scope'] ??= 'standard';
 
         // Normalize to a pure date: clients may send an ISO datetime (date+T+time).
         $validated['reservation_date'] = Carbon::parse($validated['reservation_date'])->toDateString();
@@ -399,7 +423,7 @@ class ReservationController extends Controller
         // Determine duration based on party size
         $duration = $this->calculateDuration($partySize, $policy);
         $validated['duration_minutes'] = $duration;
-        $validated['end_time'] = Carbon::parse("{$validated['reservation_date']} {$validated['reservation_time']}")->addMinutes($duration)->format('H:i');
+        $validated['end_time'] = Carbon::parse("{$validated['reservation_date']} {$validated['reservation_time']}")->addMinutes($duration)->toDateTimeString();
 
         // Check if customer has flag level (if customer_id provided)
         $guestFlagLevel = 0;
@@ -431,31 +455,9 @@ class ReservationController extends Controller
         // Set reserved_party_size
         $validated['reserved_party_size'] = $partySize;
 
-        // Validate table availability for the full duration
-        if (! empty($validated['table_id'])) {
-            $table = Table::where('id', $validated['table_id'])->first();
-            if (! $table || ! $table->is_active || in_array($table->status, ['needs_cleaning', 'maintenance'], true)) {
-                return $this->error('The selected table is not available.', 422);
-            }
-            if ($partySize > (int) $table->capacity) {
-                return $this->error(
-                    'Party size exceeds the capacity of the selected table.',
-                    422
-                );
-            }
-            if ($this->overlapsActiveReservation($validated['table_id'], $validated['reservation_date'], $validated['reservation_time'], $duration)) {
-                return $this->error(
-                    'This table is already reserved for the selected time.',
-                    409
-                );
-            }
-        } else {
-            // Auto-assign best available table
-            $bestTable = $this->findBestAvailableTable($partySize, $validated['reservation_date'], $validated['reservation_time'], $duration);
-            if ($bestTable) {
-                $validated['table_id'] = $bestTable->id;
-            }
-        }
+        $requests = $validated['requests'] ?? [];
+        unset($validated['requests']);
+        $assignment = null;
 
         // If card required but not on file, return info for frontend to handle
         if ($requiresCard && ! $validated['card_on_file']) {
@@ -487,11 +489,69 @@ class ReservationController extends Controller
         $validated['reservation_number'] = 'RES-' . strtoupper(uniqid());
         $validated['status'] = 'pending';
 
-        $reservation = Reservation::create($validated);
-        $reservation->load(['customer', 'table']);
+        $result = DB::transaction(function () use (&$validated, &$assignment, $partySize, $duration, $requests) {
+            if (! empty($validated['table_id'])) {
+                $table = Table::where('id', $validated['table_id'])->lockForUpdate()->first();
+                if (! $table || ! $table->is_active || in_array($table->status, ['needs_cleaning', 'maintenance'], true)) {
+                    return ['error' => ['message' => 'The selected table is not available.', 'code' => 422]];
+                }
+                if ($partySize > (int) $table->capacity) {
+                    return ['error' => ['message' => 'Party size exceeds the capacity of the selected table.', 'code' => 422]];
+                }
+                if ($this->availability->tableHasConflict(
+                    $table->id,
+                    Carbon::parse("{$validated['reservation_date']} {$validated['reservation_time']}"),
+                    $duration
+                )) {
+                    return ['error' => ['message' => 'This table is already reserved for the selected time.', 'code' => 409]];
+                }
+
+                [$matched, $unmet] = $this->availability->matchRequests($table, $requests);
+                $assignment = [
+                    'table' => $table,
+                    'matched_requests' => $matched,
+                    'unmet_requests' => $unmet,
+                    'score' => null,
+                    'buffer_minutes' => $this->availability->bufferMinutes(),
+                ];
+            } else {
+                $assignment = $this->availability->bestAssignment(
+                    $partySize,
+                    $validated['reservation_date'],
+                    $validated['reservation_time'],
+                    $requests,
+                    null,
+                    true
+                );
+                if ($assignment) {
+                    $validated['table_id'] = $assignment['table']->id;
+                }
+            }
+
+            $reservation = Reservation::create($validated);
+            $this->requestService->createMany($reservation, $requests, $reservation->table);
+
+            return ['reservation' => $reservation];
+        });
+
+        if (isset($result['error'])) {
+            return $this->error($result['error']['message'], $result['error']['code']);
+        }
+
+        /** @var Reservation $reservation */
+        $reservation = $result['reservation'];
+        $reservation->load(['customer', 'table', 'requests']);
 
         \App\Services\AuditLogger::record('reservation_created', $reservation, [
             'description' => "Reservation {$reservation->reservation_number} created for {$reservation->guest_name} (party of {$reservation->party_size})",
+        ]);
+        StaffNotificationService::notifyReservation($reservation, [
+            'type' => 'reservation',
+            'icon' => 'calendar',
+            'title' => 'New reservation',
+            'description' => "{$reservation->guest_name} · party of {$reservation->party_size} · {$reservation->reservation_date?->format('M j')} {$reservation->reservation_time}",
+            'action_label' => 'View reservation',
+            'action_url' => "/reservations/{$reservation->id}",
         ]);
 
         return $this->created([
@@ -511,7 +571,15 @@ class ReservationController extends Controller
             'status' => $reservation->status,
             'source' => $reservation->source,
             'special_requests' => $reservation->special_requests,
+            'requests' => ReservationRequestService::serializeCollection($reservation->requests),
+            'assignment' => $assignment ? [
+                'matched_requests' => $assignment['matched_requests'],
+                'unmet_requests' => $assignment['unmet_requests'],
+                'score' => $assignment['score'],
+                'buffer_minutes' => $assignment['buffer_minutes'],
+            ] : null,
             'event_type' => $reservation->event_type,
+            'booking_scope' => $reservation->booking_scope,
             'card_required' => $reservation->card_required,
             'deposit_required' => $reservation->deposit_required,
             'deposit_amount' => $reservation->deposit_amount,
@@ -602,8 +670,9 @@ class ReservationController extends Controller
         $startDate = $request->input('start_date', now()->startOfMonth()->toDateString());
         $endDate = $request->input('end_date', now()->endOfMonth()->toDateString());
 
-        $reservations = Reservation::with(['customer', 'table'])
-            ->whereBetween('reservation_date', [$startDate, $endDate])
+        $reservations = Reservation::with(['customer', 'table', 'requests'])
+            ->whereDate('reservation_date', '>=', $startDate)
+            ->whereDate('reservation_date', '<=', $endDate)
             ->whereNotIn('status', ['cancelled'])
             ->orderBy('reservation_date')
             ->orderBy('reservation_time')
@@ -619,8 +688,14 @@ class ReservationController extends Controller
             'party_size' => $r->party_size,
             'reservation_date' => $r->reservation_date?->toDateString(),
             'reservation_time' => $r->reservation_time,
+            'end_time' => $r->end_time,
+            'duration_minutes' => $r->duration_minutes,
             'status' => $r->status,
             'event_type' => $r->event_type,
+            'booking_scope' => $r->booking_scope,
+            'requests' => ReservationRequestService::serializeCollection($r->requests),
+            'requests_count' => $r->requests->count(),
+            'unmet_requests_count' => $r->requests->where('is_matched', false)->count(),
             'table' => $r->table ? [
                 'id' => $r->table->id,
                 'number' => $r->table->number,
@@ -649,9 +724,15 @@ class ReservationController extends Controller
                 ->get(['id', 'number', 'capacity', 'status'])
         );
 
-        $reservations = Reservation::whereBetween('reservation_date', [$startDate, $endDate])
+        $reservations = Reservation::with('customer')
+            ->whereDate('reservation_date', '>=', $startDate)
+            ->whereDate('reservation_date', '<=', $endDate)
             ->whereIn('status', ['pending', 'confirmed', 'seated'])
-            ->get(['table_id', 'reservation_date', 'reservation_time', 'status']);
+            ->get([
+                'id', 'table_id', 'customer_id', 'guest_name', 'party_size',
+                'reservation_date', 'reservation_time', 'duration_minutes',
+                'status', 'event_type', 'booking_scope',
+            ]);
 
         $occupancy = [];
         $start = \Carbon\Carbon::parse($startDate);
@@ -659,7 +740,9 @@ class ReservationController extends Controller
 
         for ($date = $start->copy(); $date->lte($end); $date->addDay()) {
             $dateStr = $date->toDateString();
-            $dayReservations = $reservations->where('reservation_date', $dateStr);
+            $dayReservations = $reservations->filter(
+                fn (Reservation $reservation) => $reservation->reservation_date?->toDateString() === $dateStr
+            );
 
             $dayOccupancy = $tables->map(function ($table) use ($dayReservations, $dateStr) {
                 $tableReservations = $dayReservations->where('table_id', $table->id);
@@ -673,8 +756,15 @@ class ReservationController extends Controller
                     'has_reservation' => $hasReservation,
                     'reservations' => $tableReservations->map(function ($r) {
                         return [
+                            'id' => $r->id,
+                            'guest_name' => $r->customer?->name ?? $r->guest_name,
+                            'party_size' => $r->party_size,
                             'reservation_time' => $r->reservation_time,
+                            'end_time' => $r->end_time,
+                            'duration_minutes' => $r->duration_minutes,
                             'status' => $r->status,
+                            'event_type' => $r->event_type,
+                            'booking_scope' => $r->booking_scope,
                         ];
                     })->values()->all(),
                 ];
@@ -688,7 +778,7 @@ class ReservationController extends Controller
 
     public function show(string $id): JsonResponse
     {
-        $reservation = Reservation::with(['customer', 'table'])->find($id);
+        $reservation = Reservation::with(['customer', 'table', 'requests'])->find($id);
 
         if (!$reservation) {
             return $this->notFound('Reservation not found.');
@@ -703,15 +793,23 @@ class ReservationController extends Controller
             'party_size' => $reservation->party_size,
             'reservation_date' => $reservation->reservation_date?->toDateString(),
             'reservation_time' => $reservation->reservation_time,
+            'end_time' => $reservation->end_time,
+            'duration_minutes' => $reservation->duration_minutes,
             'status' => $reservation->status,
             'source' => $reservation->source,
             'special_requests' => $reservation->special_requests,
+            'requests' => ReservationRequestService::serializeCollection($reservation->requests),
             'event_type' => $reservation->event_type,
+            'booking_scope' => $reservation->booking_scope,
             'cancellation_reason' => $reservation->cancellation_reason,
             'customer' => $reservation->customer ? [
                 'id' => $reservation->customer->id,
                 'name' => $reservation->customer->name,
                 'phone' => $reservation->customer->phone,
+                'email' => $reservation->customer->email,
+                'customer_type' => $reservation->customer->customer_type,
+                'notes' => $reservation->customer->notes,
+                'dietary_restrictions' => $reservation->customer->dietary_restrictions,
             ] : null,
             'table' => $reservation->table ? [
                 'id' => $reservation->table->id,
@@ -747,7 +845,17 @@ class ReservationController extends Controller
             'source' => 'sometimes|string|in:phone,online,walk_in,app',
             'special_requests' => 'nullable|string|max:2000',
             'event_type' => 'nullable|string|in:Birthday,Anniversary,Corporate,Wedding,Holiday Party,Graduation,Baby Shower,Bridal Shower,Rehearsal Dinner,Other',
+            'booking_scope' => 'sometimes|string|in:standard,half_day,whole_day',
+            'requests' => 'sometimes|array|max:20',
+            'requests.*.category' => 'required_with:requests|in:seating,accessibility,dietary,occasion,other',
+            'requests.*.label' => 'required_with:requests|string|max:120',
+            'requests.*.value' => 'nullable|string|max:120',
+            'requests.*.details' => 'nullable|string|max:1000',
+            'requests.*.priority' => 'sometimes|in:normal,high',
         ]);
+
+        $requests = $validated['requests'] ?? null;
+        unset($validated['requests']);
 
         if (isset($validated['reservation_date'])) {
             $validated['reservation_date'] = Carbon::parse($validated['reservation_date'])->toDateString();
@@ -776,31 +884,62 @@ class ReservationController extends Controller
             }
         }
 
-        $tableId = $validated['table_id'] ?? $reservation->table_id;
+        $tableId = array_key_exists('table_id', $validated)
+            ? $validated['table_id']
+            : $reservation->table_id;
         $date = $validated['reservation_date'] ?? $reservation->reservation_date->toDateString();
         $time = $validated['reservation_time'] ?? $reservation->reservation_time;
+        $partySize = (int) ($validated['party_size'] ?? $reservation->party_size);
+        $policy = $this->getReservationPolicy();
+        $duration = $this->calculateDuration($partySize, $policy);
+        $validated['duration_minutes'] = $duration;
+        $validated['end_time'] = Carbon::parse("{$date} {$time}")
+            ->addMinutes($duration)
+            ->toDateTimeString();
 
-        if (! empty($tableId)) {
-            $table = Table::where('id', $tableId)->first();
-            if (! $table || ! $table->is_active || in_array($table->status, ['needs_cleaning', 'maintenance'], true)) {
-                return $this->error('The selected table is not available.', 422);
+        $result = DB::transaction(function () use (&$validated, $reservation, $tableId, $date, $time, $duration, $partySize, $requests) {
+            $table = null;
+
+            if (! empty($tableId)) {
+                $table = Table::where('id', $tableId)->lockForUpdate()->first();
+                if (! $table || ! $table->is_active || in_array($table->status, ['needs_cleaning', 'maintenance'], true)) {
+                    return ['error' => ['message' => 'The selected table is not available.', 'code' => 422]];
+                }
+                if ($partySize > (int) $table->capacity) {
+                    return ['error' => ['message' => 'Party size exceeds the capacity of the selected table.', 'code' => 422]];
+                }
+                if ($this->availability->tableHasConflict(
+                    $tableId,
+                    Carbon::parse("{$date} {$time}"),
+                    $duration,
+                    $reservation->id
+                )) {
+                    return ['error' => ['message' => 'This table is already reserved for the selected time.', 'code' => 409]];
+                }
             }
-            if (isset($validated['party_size']) && (int) $validated['party_size'] > (int) $table->capacity) {
-                return $this->error('Party size exceeds the capacity of the selected table.', 422);
+
+            $reservation->update($validated);
+
+            if ($requests !== null) {
+                $this->requestService->syncPending($reservation, $requests, $table ?? $reservation->table);
+            } elseif ($table) {
+                // Re-evaluate seating/accessibility matches if the table changed.
+                foreach ($reservation->requests()->whereIn('category', ['seating', 'accessibility'])->get() as $request) {
+                    [$matched] = $this->availability->matchRequests($table, [$request->toArray()]);
+                    $request->update(['is_matched' => $matched !== []]);
+                }
             }
-            $durationMinutes = $reservation->duration_minutes ?? 90;
-            if ($this->overlapsActiveReservation($tableId, $date, $time, $durationMinutes, $reservation->id)) {
-                return $this->error('This table is already reserved for the selected time.', 409);
-            }
-        } elseif (isset($validated['party_size']) && $reservation->table_id) {
-            $table = $reservation->table;
-            if ((int) $validated['party_size'] > (int) $table->capacity) {
-                return $this->error('Party size exceeds the capacity of the selected table.', 422);
-            }
+
+            return ['reservation' => $reservation];
+        });
+
+        if (isset($result['error'])) {
+            return $this->error($result['error']['message'], $result['error']['code']);
         }
 
-        $reservation->update($validated);
-        $reservation->load(['customer', 'table']);
+        /** @var Reservation $reservation */
+        $reservation = $result['reservation'];
+        $reservation->load(['customer', 'table', 'requests']);
 
         \App\Services\AuditLogger::record('reservation_updated', $reservation, [
             'description' => "Reservation {$reservation->reservation_number} updated",
@@ -817,10 +956,14 @@ class ReservationController extends Controller
             'party_size' => $reservation->party_size,
             'reservation_date' => $reservation->reservation_date?->toDateString(),
             'reservation_time' => $reservation->reservation_time,
+            'end_time' => $reservation->end_time,
+            'duration_minutes' => $reservation->duration_minutes,
             'status' => $reservation->status,
             'source' => $reservation->source,
             'special_requests' => $reservation->special_requests,
+            'requests' => ReservationRequestService::serializeCollection($reservation->requests),
             'event_type' => $reservation->event_type,
+            'booking_scope' => $reservation->booking_scope,
             'customer' => $reservation->customer ? [
                 'id' => $reservation->customer->id,
                 'name' => $reservation->customer->name,
@@ -853,24 +996,43 @@ class ReservationController extends Controller
 
         $previousStatus = $reservation->status;
 
-        // Seat pre-check: the effective table must be operational. This runs
-        // before any write so a dirty table can never be seated onto.
-        if ($validated['status'] === 'seated') {
-            $seatTableId = $validated['table_id'] ?? $reservation->table_id;
-            if ($seatTableId) {
-                $seatTable = Table::find($seatTableId);
-                if (!$seatTable || !$seatTable->is_active
-                    || in_array($seatTable->status, ['maintenance', 'needs_cleaning'], true)
-                ) {
-                    return $this->error('The assigned table is not available for seating.', 409);
+        $result = DB::transaction(function () use ($reservation, $validated, $previousStatus) {
+            $target = $validated['status'];
+
+            // Auto-assign inside the transaction so concurrent confirmations
+            // cannot claim the same table.
+            if (in_array($target, ['confirmed', 'seated'], true) && empty($reservation->table_id)) {
+                $partySize = (int) ($reservation->party_size ?? ($reservation->reserved_party_size ?? 1));
+                $date = $reservation->reservation_date ? $reservation->reservation_date->toDateString() : now()->toDateString();
+                $time = $reservation->reservation_time ?? '18:00';
+                $assignment = $this->availability->bestAssignment(
+                    $partySize,
+                    $date,
+                    $time,
+                    $reservation->requests()->get()->all(),
+                    $reservation->id,
+                    true
+                );
+                if ($assignment) {
+                    $validated['table_id'] = $assignment['table']->id;
                 }
             }
-        }
 
-        DB::transaction(function () use ($reservation, $validated, $previousStatus) {
+            // Seat pre-check: the effective table must be operational. This
+            // runs before any write so a dirty table can never be seated onto.
+            if ($target === 'seated') {
+                $seatTableId = $validated['table_id'] ?? $reservation->table_id;
+                if ($seatTableId) {
+                    $seatTable = Table::lockForUpdate()->find($seatTableId);
+                    if (! $seatTable || ! $seatTable->is_active
+                        || in_array($seatTable->status, ['maintenance', 'needs_cleaning'], true)
+                    ) {
+                        return ['error' => ['message' => 'The assigned table is not available for seating.', 'code' => 409]];
+                    }
+                }
+            }
+
             $reservation->update($validated);
-
-            $target = $validated['status'];
             $tableId = $reservation->table_id;
 
             // Seating physically occupies the assigned table (distinct
@@ -910,7 +1072,13 @@ class ReservationController extends Controller
                     ], null, ['status' => $from]);
                 }
             }
+
+            return ['reservation' => $reservation];
         });
+
+        if (isset($result['error'])) {
+            return $this->error($result['error']['message'], $result['error']['code']);
+        }
 
         if ($validated['status'] !== $previousStatus) {
             $statusActions = [
@@ -994,7 +1162,15 @@ class ReservationController extends Controller
                 // Find smallest available table for actual party size
                 $policy = $this->getReservationPolicy();
                 $duration = $reservation->duration_minutes ?? $policy['regular_duration'];
-                $newTable = $this->findBestAvailableTable($actualPartySize, $reservation->reservation_date->toDateString(), $reservation->reservation_time, $duration);
+                $newTable = $this->findBestAvailableTable(
+                    $actualPartySize,
+                    $reservation->reservation_date->toDateString(),
+                    $reservation->reservation_time,
+                    $duration,
+                    $reservation->requests()->get()->all(),
+                    $reservation->id,
+                    true
+                );
 
                 if ($newTable) {
                     $reservation->update([
@@ -1175,5 +1351,130 @@ class ReservationController extends Controller
             'fee_charged' => $reservation->card_on_file && $reservation->card_required ? $reservation->reserved_party_size * $policy['no_show_fee'] : 0,
             'deposit_forfeited' => $reservation->deposit_paid ? $reservation->deposit_amount : 0,
         ], 'Reservation marked as no-show.');
+    }
+
+    public function storeRequest(Request $request, string $id): JsonResponse
+    {
+        $reservation = Reservation::with('table')->find($id);
+        if (! $reservation) {
+            return $this->notFound('Reservation not found.');
+        }
+
+        $validated = $request->validate([
+            'category' => 'required|in:seating,accessibility,dietary,occasion,other',
+            'label' => 'required|string|max:120',
+            'value' => 'nullable|string|max:120',
+            'details' => 'nullable|string|max:1000',
+            'priority' => 'sometimes|in:normal,high',
+        ]);
+
+        [$matched] = $reservation->table
+            ? $this->availability->matchRequests($reservation->table, [$validated])
+            : [[], []];
+        $validated['is_matched'] = in_array($validated['category'], ['seating', 'accessibility'], true) && $reservation->table
+            ? $matched !== []
+            : null;
+
+        $item = $reservation->requests()->create($validated);
+        $item->refresh();
+
+        AuditLogger::record('reservation_request_added', $reservation, [
+            'description' => "Request {$item->label} added to reservation {$reservation->reservation_number}",
+        ]);
+
+        StaffNotificationService::notifyReservation($reservation, [
+            'type' => 'request',
+            'icon' => 'request',
+            'title' => 'Special request added',
+            'description' => "{$reservation->guest_name} · {$item->label}",
+            'action_label' => 'View request',
+            'action_url' => "/reservations/{$reservation->id}",
+        ]);
+
+        return $this->created(ReservationRequestService::serialize($item), 'Request added successfully.');
+    }
+
+    public function updateRequest(Request $request, string $id, string $requestId): JsonResponse
+    {
+        $reservation = Reservation::with('table')->find($id);
+        if (! $reservation) {
+            return $this->notFound('Reservation not found.');
+        }
+
+        $item = $reservation->requests()->find($requestId);
+        if (! $item) {
+            return $this->notFound('Request not found.');
+        }
+
+        $validated = $request->validate([
+            'category' => 'sometimes|in:seating,accessibility,dietary,occasion,other',
+            'label' => 'sometimes|string|max:120',
+            'value' => 'nullable|string|max:120',
+            'details' => 'nullable|string|max:1000',
+            'priority' => 'sometimes|in:normal,high',
+            'status' => 'sometimes|in:pending,acknowledged,in_progress,completed,cancelled',
+        ]);
+
+        if (($validated['status'] ?? null) === 'acknowledged') {
+            $validated['acknowledged_by'] = $request->user()?->id;
+            $validated['acknowledged_at'] = now();
+        }
+        if (($validated['status'] ?? null) === 'completed') {
+            $validated['completed_by'] = $request->user()?->id;
+            $validated['completed_at'] = now();
+        }
+
+        $item->update($validated);
+
+        if ($reservation->table && (
+            array_key_exists('category', $validated)
+            || array_key_exists('label', $validated)
+            || array_key_exists('value', $validated)
+        )) {
+            [$matched] = $this->availability->matchRequests($reservation->table, [$item->refresh()->toArray()]);
+            $item->update([
+                'is_matched' => in_array($item->category, ['seating', 'accessibility'], true)
+                    ? $matched !== []
+                    : null,
+            ]);
+        }
+
+        AuditLogger::record('reservation_request_updated', $reservation, [
+            'description' => "Request {$item->label} updated on reservation {$reservation->reservation_number}",
+            'status' => $item->status,
+        ]);
+
+        StaffNotificationService::notifyReservation($reservation, [
+            'type' => 'request',
+            'icon' => 'request',
+            'title' => 'Special request updated',
+            'description' => "{$reservation->guest_name} · {$item->label} is now {$item->status}",
+            'action_label' => 'View request',
+            'action_url' => "/reservations/{$reservation->id}",
+        ]);
+
+        return $this->success(ReservationRequestService::serialize($item), 'Request updated successfully.');
+    }
+
+    public function destroyRequest(Request $request, string $id, string $requestId): JsonResponse
+    {
+        $reservation = Reservation::find($id);
+        if (! $reservation) {
+            return $this->notFound('Reservation not found.');
+        }
+
+        $item = $reservation->requests()->find($requestId);
+        if (! $item) {
+            return $this->notFound('Request not found.');
+        }
+
+        $label = $item->label;
+        $item->delete();
+
+        AuditLogger::record('reservation_request_removed', $reservation, [
+            'description' => "Request {$label} removed from reservation {$reservation->reservation_number}",
+        ]);
+
+        return $this->success(null, 'Request removed successfully.');
     }
 }

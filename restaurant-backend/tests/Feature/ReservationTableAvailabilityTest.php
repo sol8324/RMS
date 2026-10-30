@@ -53,6 +53,7 @@ class ReservationTableAvailabilityTest extends TestCase
             'reservation_date' => now()->addDay()->toDateString(),
             'reservation_time' => '19:00',
             'table_id' => $tableId,
+            'card_on_file' => true,
         ];
     }
 

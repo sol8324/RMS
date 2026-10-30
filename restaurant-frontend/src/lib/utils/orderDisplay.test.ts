@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { customerDisplayName, tableDisplayName } from "./orderDisplay";
-import type { Order, Customer } from "@/lib/types";
+import {
+  customerDisplayName,
+  tableDisplayName,
+  tableSelectOptions,
+} from "./orderDisplay";
+import type { Order, Customer, Table } from "@/lib/types";
 
 function makeOrder(overrides: Partial<Order> = {}): Order {
   return {
@@ -48,5 +52,28 @@ describe("orderDisplay helpers (never show UUID)", () => {
 
   it("returns empty table label for takeaway", () => {
     expect(tableDisplayName(makeOrder({ order_type: "takeaway" }))).toBe("");
+  });
+
+  it("keeps the table id as the select value but uses a readable label", () => {
+    const table: Table = {
+      id: "00000000-0000-0000-0000-270e33da79c5",
+      number: "10",
+      capacity: 4,
+      status: "occupied",
+      is_wheelchair_accessible: false,
+      pos_x: 0,
+      pos_y: 0,
+      width: 0,
+      height: 0,
+      created_at: "",
+      updated_at: "",
+    };
+
+    expect(tableSelectOptions([table])).toEqual([
+      {
+        value: "00000000-0000-0000-0000-270e33da79c5",
+        label: "Table 10 (4 seats)",
+      },
+    ]);
   });
 });

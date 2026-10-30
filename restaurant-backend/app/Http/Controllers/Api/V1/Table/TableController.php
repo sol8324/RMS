@@ -5,13 +5,21 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Api\V1\Table;
 
 use App\Http\Controllers\Controller;
+use App\Models\Reservation;
 use App\Models\Table;
+use App\Services\ReservationAvailabilityService;
+use App\Services\ReservationRequestService;
+use App\Services\TableDiningPolicy;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 class TableController extends Controller
 {
+    public function __construct(private readonly ReservationAvailabilityService $availability)
+    {
+    }
+
     public function index(Request $request): JsonResponse
     {
         $query = Table::with('floorPlan');
@@ -36,6 +44,18 @@ class TableController extends Controller
         }
 
         $tables = Table::sortByNumber($query->get());
+        $tableIds = $tables->pluck('id')->all();
+
+        $reservations = Reservation::with(['requests', 'customer'])
+            ->whereIn('table_id', $tableIds)
+            ->whereIn('status', ReservationAvailabilityService::BLOCKING_STATUSES)
+            ->whereDate('reservation_date', '>=', now()->toDateString())
+            ->whereDate('reservation_date', '<=', now()->copy()->addDays(7)->toDateString())
+            ->orderBy('reservation_date')
+            ->orderBy('reservation_time')
+            ->get();
+
+        $reservationsByTable = $reservations->groupBy('table_id');
 
         $data = $tables->map(fn (Table $t) => [
             'id' => $t->id,
@@ -49,10 +69,18 @@ class TableController extends Controller
             'height' => (float) $t->height,
             'is_active' => $t->is_active,
             'is_wheelchair_accessible' => (bool) $t->is_wheelchair_accessible,
+            'location' => $t->location,
+            'location_description' => $t->location_description,
             'floor_plan' => $t->floorPlan ? [
                 'id' => $t->floorPlan->id,
                 'name' => $t->floorPlan->name,
             ] : null,
+            'next_reservation' => $this->nextReservationPayload(
+                $reservationsByTable->get($t->id, collect())
+            ),
+            'reservations_today' => $reservationsByTable->get($t->id, collect())
+                ->filter(fn (Reservation $r) => $r->reservation_date?->toDateString() === now()->toDateString())
+                ->count(),
             'created_at' => $t->created_at?->toISOString(),
             'updated_at' => $t->updated_at?->toISOString(),
         ]);
@@ -60,10 +88,73 @@ class TableController extends Controller
         return $this->success(['items' => $data]);
     }
 
+    private function nextReservationPayload(iterable $reservations): ?array
+    {
+        $now = now();
+
+        foreach ($reservations as $reservation) {
+            if (! in_array($reservation->status, TableDiningPolicy::BLOCKING_RESERVATION_STATUSES, true)) {
+                continue;
+            }
+
+            if (! $reservation->reservation_date || ! $reservation->reservation_time) {
+                continue;
+            }
+            $start = Carbon::parse(
+                $reservation->reservation_date->toDateString().' '.$reservation->reservation_time
+            );
+            $end = $start->copy()->addMinutes((int) ($reservation->duration_minutes ?? 180));
+
+            if ($end->lt($now)) {
+                continue;
+            }
+
+            return $this->reservationContextPayload($reservation);
+        }
+
+        return null;
+    }
+
+    private function reservationContextPayload(Reservation $reservation): array
+    {
+        $reservation->loadMissing(['customer', 'requests']);
+        $customer = $reservation->customer;
+
+        return [
+            'id' => $reservation->id,
+            'reservation_number' => $reservation->reservation_number,
+            'guest_name' => $reservation->guest_name ?: $customer?->name,
+            'guest_phone' => $reservation->guest_phone ?: $customer?->phone,
+            'guest_email' => $reservation->guest_email ?: $customer?->email,
+            'party_size' => $reservation->party_size,
+            'reservation_date' => $reservation->reservation_date?->toDateString(),
+            'reservation_time' => $reservation->reservation_time,
+            'end_time' => $reservation->end_time,
+            'duration_minutes' => $reservation->duration_minutes,
+            'status' => $reservation->status,
+            'source' => $reservation->source,
+            'special_requests' => $reservation->special_requests,
+            'event_type' => $reservation->event_type,
+            'booking_scope' => $reservation->booking_scope,
+            'customer' => $customer ? [
+                'id' => $customer->id,
+                'name' => $customer->name,
+                'phone' => $customer->phone,
+                'email' => $customer->email,
+                'customer_type' => $customer->customer_type,
+                'notes' => $customer->notes,
+                'dietary_restrictions' => $customer->dietary_restrictions,
+            ] : null,
+            'requests' => ReservationRequestService::serializeCollection($reservation->requests),
+            'requests_count' => $reservation->requests->count(),
+            'unmet_requests_count' => $reservation->requests->where('is_matched', false)->count(),
+        ];
+    }
+
     public function store(Request $request): JsonResponse
     {
         $validated = $request->validate([
-            // Floor-plan geometry is optional on create — the simple Add Table
+            // Floor-plan geometry is optional on create Ã¢â‚¬â€ the simple Add Table
             // flow sends number/capacity/shape only; defaults below keep the
             // row valid for the floor-plan editor.
             'floor_plan_id' => ['nullable', 'uuid', 'exists:floor_plans,id'],
@@ -77,6 +168,8 @@ class TableController extends Controller
             'height' => 'sometimes|numeric|min:1',
             'is_active' => 'sometimes|boolean',
             'is_wheelchair_accessible' => 'sometimes|boolean',
+            'location' => 'sometimes|nullable|string|max:100',
+            'location_description' => 'sometimes|nullable|string|max:500',
         ]);
 
         $floorPlanId = $validated['floor_plan_id']
@@ -148,6 +241,8 @@ class TableController extends Controller
             'height' => (float) $table->height,
             'is_active' => $table->is_active,
             'is_wheelchair_accessible' => (bool) $table->is_wheelchair_accessible,
+            'location' => $table->location,
+            'location_description' => $table->location_description,
             'floor_plan' => $table->floorPlan ? [
                 'id' => $table->floorPlan->id,
                 'name' => $table->floorPlan->name,
@@ -177,6 +272,8 @@ class TableController extends Controller
             'height' => 'sometimes|numeric|min:1',
             'is_active' => 'sometimes|boolean',
             'is_wheelchair_accessible' => 'sometimes|boolean',
+            'location' => 'sometimes|nullable|string|max:100',
+            'location_description' => 'sometimes|nullable|string|max:500',
         ]);
 
         if (isset($validated['number'])) {
@@ -263,7 +360,7 @@ class TableController extends Controller
 
     /**
      * Archive a table (is_active = false). Historical orders and
-     * reservations keep their reference — tables are never hard-deleted.
+     * reservations keep their reference Ã¢â‚¬â€ tables are never hard-deleted.
      *
      * A table with an active (non-finished) order or a pending/confirmed
      * reservation cannot be archived; a meaningful 409 explains why.
@@ -474,10 +571,10 @@ class TableController extends Controller
      * Eligible = active AND (
      *   available
      *   OR occupied by an active seated reservation with no other active
-     *   dine-in order (one cover → one active order)
+     *   dine-in order (one cover Ã¢â€ â€™ one active order)
      * ).
      * needs_cleaning / maintenance / reserved / inactive tables are never
-     * listed. Same rule as OrderController::store — the backend remains
+     * listed. Same rule as OrderController::store Ã¢â‚¬â€ the backend remains
      * authoritative (409/422) if the client forces anything else.
      */
     public function orderEligible(Request $request): JsonResponse
@@ -546,64 +643,29 @@ class TableController extends Controller
             'reservation_time' => 'required|date_format:H:i,H:i:s,g:i A',
             'party_size' => 'nullable|integer|min:1',
             'floor_plan_id' => 'nullable|uuid',
+            'exclude_reservation_id' => 'nullable|uuid',
+            'requests' => 'sometimes|array|max:20',
         ]);
 
-        $date = $validated['reservation_date'];
+        $date = Carbon::parse($validated['reservation_date'])->toDateString();
         $time = strlen($validated['reservation_time']) > 5
             ? substr($validated['reservation_time'], 0, 5)
             : $validated['reservation_time'];
-        $windowMinutes = (int) config('app.reservation_window_minutes', 90);
+        $partySize = (int) ($validated['party_size'] ?? 1);
 
-        // Tables blocked by overlapping reservations on this date.
-        // Pending, confirmed AND seated reservations block; completed /
-        // cancelled / no-show never do.
-        $blockingStatuses = ['pending', 'confirmed', 'seated'];
-        $blockedTableIds = [];
-
-        $sameDay = \App\Models\Reservation::whereIn('status', $blockingStatuses)
-            ->whereDate('reservation_date', $date)
-            ->get(['table_id', 'reservation_date', 'reservation_time']);
-
-        $slotStart = Carbon::parse("{$date} {$time}");
-        $slotEnd = $slotStart->copy()->addMinutes($windowMinutes);
-
-        foreach ($sameDay as $reservation) {
-            if (! $reservation->table_id || ! $reservation->reservation_time) {
-                continue;
-            }
-
-            $resStart = Carbon::parse($reservation->reservation_date->toDateString().' '.$reservation->reservation_time);
-            $resEnd = $resStart->copy()->addMinutes($windowMinutes);
-
-            if ($slotStart < $resEnd && $resStart < $slotEnd) {
-                $blockedTableIds[] = $reservation->table_id;
-            }
-        }
-
-        $query = Table::query()
-            ->where('is_active', true)
-            // Operationally unusable tables are never assignable,
-            // regardless of time-slot availability.
-            ->whereNotIn('status', ['needs_cleaning', 'maintenance'])
-            ->whereNotIn('id', array_unique($blockedTableIds));
+        $tables = $this->availability->availableTables(
+            $date,
+            $time,
+            $partySize,
+            $validated['requests'] ?? [],
+            $validated['exclude_reservation_id'] ?? null
+        );
 
         if ($floorPlanId = $request->input('floor_plan_id')) {
-            $query->where('floor_plan_id', $floorPlanId);
+            $tables = $tables->where('floor_plan_id', $floorPlanId);
         }
 
-        if ($partySize = (int) ($validated['party_size'] ?? 0)) {
-            $query->where('capacity', '>=', $partySize);
-        }
-
-        // For walk-in / today slots, physically occupied tables are not free.
-        if ($date === now()->toDateString()) {
-            $now = now();
-            if ($now->between($slotStart, $slotEnd)) {
-                $query->whereNot('status', 'occupied');
-            }
-        }
-
-        $tables = Table::sortByNumber($query->get(), capacityFirst: true);
+        $tables = Table::sortByNumber($tables, capacityFirst: true);
 
         $data = $tables->map(fn (Table $t) => [
             'id' => $t->id,
@@ -617,6 +679,8 @@ class TableController extends Controller
             'height' => (float) $t->height,
             'is_active' => $t->is_active,
             'is_wheelchair_accessible' => (bool) $t->is_wheelchair_accessible,
+            'location' => $t->location,
+            'location_description' => $t->location_description,
             'floor_plan' => $t->floorPlan ? [
                 'id' => $t->floorPlan->id,
                 'name' => $t->floorPlan->name,
@@ -624,5 +688,126 @@ class TableController extends Controller
         ]);
 
         return $this->success(['items' => $data]);
+    }
+
+    public function schedule(Request $request, string $id): JsonResponse
+    {
+        $table = Table::with('floorPlan')->find($id);
+        if (! $table) {
+            return $this->notFound('Table not found.');
+        }
+
+        $validated = $request->validate([
+            'date' => 'sometimes|date',
+            'days' => 'sometimes|integer|min:1|max:7',
+        ]);
+
+        $startDate = Carbon::parse($validated['date'] ?? now()->toDateString())->startOfDay();
+        $days = (int) ($validated['days'] ?? 1);
+        $endDate = $startDate->copy()->addDays($days - 1);
+        $policy = $this->availability->policy();
+        $buffer = $this->availability->bufferMinutes($policy);
+
+        $reservations = Reservation::with(['requests', 'customer'])
+            ->where('table_id', $table->id)
+            ->whereNotIn('status', ['cancelled', 'no_show'])
+            ->whereDate('reservation_date', '>=', $startDate->toDateString())
+            ->whereDate('reservation_date', '<=', $endDate->toDateString())
+            ->orderBy('reservation_date')
+            ->orderBy('reservation_time')
+            ->get();
+
+        $currentSession = TableDiningPolicy::activeSeatedReservation($table->id);
+        if ($currentSession) {
+            $currentSession->loadMissing(['customer', 'requests']);
+        }
+
+        $upcomingReservations = Reservation::with(['requests', 'customer'])
+            ->where('table_id', $table->id)
+            ->whereIn('status', ['pending', 'confirmed'])
+            ->whereDate('reservation_date', '>=', now()->toDateString())
+            ->whereDate('reservation_date', '<=', now()->copy()->addDays(7)->toDateString())
+            ->orderBy('reservation_date')
+            ->orderBy('reservation_time')
+            ->get()
+            ->filter(function (Reservation $reservation) use ($currentSession, $buffer): bool {
+                if (! $reservation->reservation_date || ! $reservation->reservation_time) {
+                    return false;
+                }
+
+                $reservationStart = Carbon::parse(
+                    $reservation->reservation_date->toDateString().' '.$reservation->reservation_time
+                );
+
+                if (! $reservationStart->addMinutes((int) ($reservation->duration_minutes ?? 180))->gte(now())) {
+                    return false;
+                }
+
+                if ($currentSession && $currentSession->reservation_date && $currentSession->reservation_time) {
+                    $currentEnd = Carbon::parse(
+                        $currentSession->reservation_date->toDateString().' '.$currentSession->reservation_time
+                    )->addMinutes((int) ($currentSession->duration_minutes ?? 180) + $buffer);
+
+                    if ($currentEnd->gt(now()) && $reservationStart->lt($currentEnd)) {
+                        return false;
+                    }
+                }
+
+                return true;
+            })
+            ->take(5)
+            ->values();
+
+        $nextReservation = $upcomingReservations->first();
+
+        $items = $reservations->map(fn (Reservation $reservation) => $this->reservationContextPayload($reservation));
+
+        $slots = [];
+        for ($day = $startDate->copy(); $day->lte($endDate); $day->addDay()) {
+            for ($minutes = 11 * 60; $minutes < 23 * 60; $minutes += 30) {
+                $time = sprintf('%02d:%02d', intdiv($minutes, 60), $minutes % 60);
+                $start = Carbon::parse($day->toDateString().' '.$time);
+                $conflict = $this->availability->tableHasConflict(
+                    $table->id,
+                    $start,
+                    30,
+                    null,
+                    $buffer
+                );
+
+                $slots[] = [
+                    'date' => $day->toDateString(),
+                    'time' => $time,
+                    'display_time' => $start->format('g:i A'),
+                    'is_available' => ! $conflict,
+                ];
+            }
+        }
+
+        return $this->success([
+            'table' => [
+                'id' => $table->id,
+                'number' => $table->number,
+                'capacity' => $table->capacity,
+                'status' => $table->status,
+                'location' => $table->location,
+                'location_description' => $table->location_description,
+                'is_wheelchair_accessible' => (bool) $table->is_wheelchair_accessible,
+            ],
+            'date' => $startDate->toDateString(),
+            'days' => $days,
+            'buffer_minutes' => $buffer,
+            'current_session' => $currentSession
+                ? $this->reservationContextPayload($currentSession)
+                : null,
+            'next_reservation' => $nextReservation
+                ? $this->reservationContextPayload($nextReservation)
+                : null,
+            'upcoming_reservations' => $upcomingReservations
+                ->map(fn (Reservation $reservation) => $this->reservationContextPayload($reservation))
+                ->all(),
+            'reservations' => $items,
+            'slots' => $slots,
+        ]);
     }
 }

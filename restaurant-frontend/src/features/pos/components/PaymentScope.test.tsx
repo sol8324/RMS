@@ -10,6 +10,15 @@ vi.mock("@/lib/hooks", () => ({
 vi.mock("@/features/settings/hooks/useSettings", () => ({
   useTaxRate: () => 0.12,
   useSettings: () => ({ data: null, isLoading: false }),
+  useActivePaymentMethods: () => ({
+    cash: true,
+    card: true,
+    e_wallet: true,
+    e_bank: false,
+  }),
+}));
+vi.mock("@/providers/AuthProvider", () => ({
+  useAuth: () => ({ user: { role: "cashier" } }),
 }));
 
 function renderWithQueryClient(ui: React.ReactElement) {

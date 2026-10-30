@@ -1,4 +1,4 @@
-export type CustomerType = "registered";
+export type CustomerType = "registered" | "guest" | "walk_in";
 
 export interface Customer {
   id: string;

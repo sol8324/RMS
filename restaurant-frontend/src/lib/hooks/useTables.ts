@@ -7,6 +7,7 @@ import type {
   ApiResponse,
   Table,
   TableFormData,
+  TableSchedule,
 } from "@/lib/types";
 
 export function useTables() {
@@ -52,6 +53,24 @@ export function useTables() {
  * order yet (one cover → one active order). The backend remains
  * authoritative — this list is only a convenience filter.
  */
+export function useTableSchedule(
+  tableId: string | null | undefined,
+  date: string,
+  enabled = true
+) {
+  return useQuery({
+    queryKey: ["tables", "schedule", tableId, date],
+    queryFn: () =>
+      api
+        .get<ApiResponse<TableSchedule>>(`/tables/${tableId}/schedule`, {
+          params: { date, days: 7 },
+        })
+        .then((res) => res.data.data),
+    enabled: !!tableId && enabled,
+    staleTime: 30_000,
+  });
+}
+
 export function useOrderEligibleTables() {
   return useQuery({
     queryKey: ["tables", "order-eligible"],

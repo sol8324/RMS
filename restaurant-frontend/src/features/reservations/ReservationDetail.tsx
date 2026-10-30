@@ -16,8 +16,16 @@ import {
   CircleCheck,
   XCircle,
   ChevronRight,
+  Phone,
+  CalendarDays,
 } from "lucide-react";
-import type { Reservation } from "@/lib/types";
+import type { BookingScope, Reservation } from "@/lib/types";
+
+const BOOKING_SCOPE_LABEL: Record<BookingScope, string> = {
+  standard: "Standard reservation",
+  half_day: "Half-day event",
+  whole_day: "Whole-day event",
+};
 
 function formatDate(dateStr: string | undefined | null) {
   if (!dateStr) return "—";
@@ -129,8 +137,15 @@ export function ReservationDetail({
                 <div>
                   <p className="text-xs text-muted-foreground">Customer</p>
                   <p className="text-sm font-medium">{reservation.customer?.name ?? reservation.guest_name}</p>
+                  <p className="text-xs text-muted-foreground">{(reservation.customer_id || reservation.customer?.customer_type === 'registered') ? 'Regular Customer' : 'Guest'}</p>
                   {reservation.customer?.phone && (
                     <p className="text-xs text-muted-foreground">{reservation.customer.phone}</p>
+                  )}
+                  {reservation.guest_phone && (
+                    <p className="text-xs text-muted-foreground flex items-center gap-1">
+                      <Phone className="h-3 w-3" />
+                      {reservation.guest_phone}
+                    </p>
                   )}
                 </div>
               </div>
@@ -161,9 +176,36 @@ export function ReservationDetail({
                 </div>
                 <div>
                   <p className="text-xs text-muted-foreground">Time</p>
-                  <p className="text-sm font-medium">{formatTime(reservation.reservation_time)}</p>
+                  <p className="text-sm font-medium">
+                    {formatTime(reservation.reservation_time)}
+                    {reservation.end_time ? ` – ${formatTime(reservation.end_time)}` : ""}
+                  </p>
                 </div>
               </div>
+
+              {reservation.event_type && (
+                <div className="flex items-center gap-3">
+                  <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-muted">
+                    <CalendarDays className="h-4 w-4 text-muted-foreground" />
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">Event Type</p>
+                    <p className="text-sm font-medium">{reservation.event_type}</p>
+                  </div>
+                </div>
+              )}
+
+              {reservation.booking_scope && reservation.booking_scope !== "standard" && (
+                <div className="flex items-center gap-3">
+                  <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-violet-50 dark:bg-violet-900/20">
+                    <CalendarDays className="h-4 w-4 text-violet-600 dark:text-violet-400" />
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">Booking Type</p>
+                    <p className="text-sm font-medium">{BOOKING_SCOPE_LABEL[reservation.booking_scope]}</p>
+                  </div>
+                </div>
+              )}
 
               <div className="flex items-center gap-3">
                 <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-muted">

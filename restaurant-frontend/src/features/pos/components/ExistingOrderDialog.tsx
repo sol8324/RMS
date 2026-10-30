@@ -11,10 +11,10 @@ import {
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { DialogBodySkeleton } from "@/components/shared";
-import { Search, Receipt, ChevronDown, ChevronRight } from "lucide-react";
+import { Search, Receipt, ChevronDown, ChevronRight, Package } from "lucide-react";
 import { useUnpaidOrders } from "@/lib/hooks";
 import { formatCurrency, formatLabel } from "@/lib/utils";
-import { customerDisplayName, tableDisplayName } from "@/lib/utils/orderDisplay";
+import { customerDisplayName, formatTableDisplay } from "@/lib/utils/orderDisplay";
 import { compareTableNumbers } from "@/lib/utils/tableSort";
 import type { Order } from "@/lib/types";
 
@@ -22,6 +22,11 @@ const PAYMENT_BADGE: Record<string, string> = {
   unpaid: "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300",
   partial:
     "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300",
+};
+
+const ORDER_TYPE_BADGE: Record<string, string> = {
+  dine_in: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300",
+  takeaway: "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300",
 };
 
 interface ExistingOrderDialogProps {
@@ -63,9 +68,7 @@ export function ExistingOrderDialog({
     const noTableOrders: Order[] = [];
 
     for (const order of filteredOrders) {
-      const tableKey = order.table?.number
-        ? `Table ${order.table.number}`
-        : "No Table Assigned";
+      const tableKey = order.table ? formatTableDisplay(order.table) : "No Table Assigned";
 
       if (order.table?.number) {
         if (!groups[tableKey]) groups[tableKey] = [];
@@ -100,7 +103,7 @@ export function ExistingOrderDialog({
       className="w-full flex items-center justify-between p-3 text-left border-t hover:bg-muted/40 transition-colors first:border-t-0"
     >
       <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <span className="text-sm font-semibold">
             {order.order_number}
           </span>
@@ -112,11 +115,28 @@ export function ExistingOrderDialog({
           >
             {formatLabel(order.payment_status ?? "unpaid")}
           </Badge>
+          <Badge
+            variant="secondary"
+            className={`text-[9px] px-1.5 py-0 ${
+              ORDER_TYPE_BADGE[order.order_type] ?? ""
+            }`}
+          >
+            {order.order_type === "dine_in" ? "Dine In" : "Takeaway"}
+          </Badge>
         </div>
         <p className="mt-0.5 text-xs text-muted-foreground capitalize">
-          {order.order_type.replace(/_/g, " ")}
-          {` · ${customerDisplayName(order)}`}
+          {customerDisplayName(order)}
         </p>
+        {order.items && order.items.length > 0 && (
+          <p className="mt-1 text-xs text-muted-foreground flex items-center gap-1">
+            <Package className="h-2.5 w-2.5" />
+            {order.items.map((i, idx) => (
+              <span key={idx} className="truncate max-w-[200px]">
+                {i.name ?? i.menu_item_name ?? "Item"} × {i.quantity}
+              </span>
+            ))}
+          </p>
+        )}
       </div>
       <div className="ml-3 shrink-0 text-right">
         <p className="text-sm font-bold">
@@ -232,10 +252,10 @@ export function ExistingOrderDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg max-h-[85vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle>Select an Order to Pay</DialogTitle>
-          <DialogDescription>
+      <DialogContent className="sm:max-w-md max-h-[min(85vh,600px)] overflow-hidden flex flex-col">
+        <DialogHeader className="pb-2">
+          <DialogTitle className="text-base">Select an Order to Pay</DialogTitle>
+          <DialogDescription className="text-xs">
             Only served orders with an unpaid balance appear here. Orders are grouped by table.
           </DialogDescription>
         </DialogHeader>
@@ -246,11 +266,11 @@ export function ExistingOrderDialog({
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Search by order # or customer..."
-            className="pl-8"
+            className="pl-8 h-8 text-sm"
           />
         </div>
 
-        <div className="space-y-3 max-h-[50vh] overflow-y-auto">
+        <div className="space-y-2 flex-1 min-h-0 overflow-y-auto">
           {renderContent()}
         </div>
       </DialogContent>

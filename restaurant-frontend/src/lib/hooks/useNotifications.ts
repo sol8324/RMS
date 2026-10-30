@@ -1,14 +1,30 @@
 import {
+  useMutation,
   useQuery,
   useQueryClient,
   type QueryClient,
 } from "@tanstack/react-query";
-import type { Notification } from "@/lib/types";
+import api from "@/lib/api/client";
+import type { ApiResponse, Notification, NotificationIcon, NotificationType } from "@/lib/types";
 
 const STORAGE_KEY = "notifications";
 const MAX_NOTIFICATIONS = 50;
+const LOCAL_KEY = ["notifications", "local"] as const;
+const SERVER_KEY = ["notifications", "server"] as const;
 
 let notificationIdCounter = 0;
+
+interface ServerNotification {
+  id: string;
+  type: string;
+  icon: string;
+  title: string;
+  description: string;
+  action_label?: string | null;
+  action_url?: string | null;
+  read: boolean;
+  created_at: string;
+}
 
 function generateId(): string {
   if (typeof window !== "undefined" && typeof crypto !== "undefined" && crypto.randomUUID) {
@@ -42,8 +58,26 @@ function persistToStorage(notifications: Notification[]): void {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(notifications.slice(0, MAX_NOTIFICATIONS)));
   } catch {
-    // Storage full or unavailable — silently ignore
+    // Storage full or unavailable - silently ignore
   }
+}
+
+function mapServerNotification(item: ServerNotification): Notification {
+  return {
+    id: item.id,
+    type: (item.type as NotificationType) || "info",
+    icon: (item.icon as NotificationIcon) || "info",
+    title: item.title,
+    description: item.description,
+    time: item.created_at,
+    read: item.read,
+    action: item.action_url
+      ? {
+          label: item.action_label || "View",
+          href: item.action_url,
+        }
+      : undefined,
+  };
 }
 
 export function addNotification(
@@ -57,51 +91,77 @@ export function addNotification(
     read: false,
   };
 
-  queryClient.setQueryData<Notification[]>(
-    ["notifications"],
-    (current = []) => {
-      const next = [newNotification, ...current].slice(0, MAX_NOTIFICATIONS);
-      persistToStorage(next);
-      return next;
-    }
-  );
+  queryClient.setQueryData<Notification[]>(LOCAL_KEY, (current = []) => {
+    const next = [newNotification, ...current].slice(0, MAX_NOTIFICATIONS);
+    persistToStorage(next);
+    return next;
+  });
 }
 
 export function useNotifications() {
   const queryClient = useQueryClient();
 
-  const query = useQuery({
-    queryKey: ["notifications"],
+  const localQuery = useQuery({
+    queryKey: LOCAL_KEY,
     queryFn: loadFromStorage,
     initialData: [],
   });
 
-  const notifications = query.data ?? [];
+  const serverQuery = useQuery({
+    queryKey: SERVER_KEY,
+    queryFn: () =>
+      api
+        .get<ApiResponse<{ items: ServerNotification[]; unread_count: number }>>("/notifications", {
+          params: { per_page: 30 },
+        })
+        .then((res) => (res.data.data?.items ?? []).map(mapServerNotification)),
+    retry: false,
+    staleTime: 30_000,
+  });
+
+  const notifications = [...(serverQuery.data ?? []), ...(localQuery.data ?? [])]
+    .sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime())
+    .slice(0, MAX_NOTIFICATIONS);
 
   const unreadCount = notifications.filter((n) => !n.read).length;
 
+  const markReadMutation = useMutation({
+    mutationFn: (id: string) =>
+      api.patch<ApiResponse<ServerNotification>>(`/notifications/${id}/read`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: SERVER_KEY });
+    },
+  });
+
+  const markAllReadMutation = useMutation({
+    mutationFn: () => api.patch<ApiResponse<{ updated: number }>>("/notifications/read-all"),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: SERVER_KEY });
+    },
+  });
+
   const markRead = (id: string) => {
-    queryClient.setQueryData<Notification[]>(
-      ["notifications"],
-      (current = []) => {
-        const next = current.map((n) =>
-          n.id === id ? { ...n, read: true } : n
-        );
+    const isLocal = (localQuery.data ?? []).some((n) => n.id === id);
+
+    if (isLocal) {
+      queryClient.setQueryData<Notification[]>(LOCAL_KEY, (current = []) => {
+        const next = current.map((n) => (n.id === id ? { ...n, read: true } : n));
         persistToStorage(next);
         return next;
-      }
-    );
+      });
+      return;
+    }
+
+    markReadMutation.mutate(id);
   };
 
   const markAllRead = () => {
-    queryClient.setQueryData<Notification[]>(
-      ["notifications"],
-      (current = []) => {
-        const next = current.map((n) => ({ ...n, read: true }));
-        persistToStorage(next);
-        return next;
-      }
-    );
+    queryClient.setQueryData<Notification[]>(LOCAL_KEY, (current = []) => {
+      const next = current.map((n) => ({ ...n, read: true }));
+      persistToStorage(next);
+      return next;
+    });
+    markAllReadMutation.mutate();
   };
 
   return {
@@ -109,5 +169,6 @@ export function useNotifications() {
     unreadCount,
     markRead,
     markAllRead,
+    isLoading: localQuery.isLoading || serverQuery.isLoading,
   };
 }

@@ -57,4 +57,49 @@ class ReservationDateTimePayloadTest extends TestCase
         $this->assertSame(now()->addDay()->toDateString(), $reservation->reservation_date->toDateString());
         $this->assertSame('T01', $reservation->table->number);
     }
+
+    public function test_calendar_exposes_booking_scope_and_guest_event_details(): void
+    {
+        $date = now()->addDay()->toDateString();
+        $plan = FloorPlan::create(['name' => 'Event Floor', 'is_active' => true]);
+        $table = Table::create([
+            'floor_plan_id' => $plan->id,
+            'number' => 'T02',
+            'capacity' => 4,
+            'status' => 'available',
+            'shape' => 'rectangular',
+            'pos_x' => 0.0,
+            'pos_y' => 0.0,
+            'width' => 1.0,
+            'height' => 1.0,
+            'is_active' => true,
+        ]);
+
+        $response = $this->actingAs($this->admin)->postJson('/api/v1/reservations', [
+            'guest_name' => 'Event Guest',
+            'guest_phone' => '09170000002',
+            'party_size' => 4,
+            'reservation_date' => $date,
+            'reservation_time' => '19:00',
+            'table_id' => $table->id,
+            'event_type' => 'Birthday',
+            'booking_scope' => 'half_day',
+        ]);
+
+        $response->assertCreated()
+            ->assertJsonPath('data.booking_scope', 'half_day')
+            ->assertJsonPath('data.end_time', '22:00');
+
+        $calendar = $this->actingAs($this->admin)->getJson(
+            "/api/v1/reservations/calendar?start_date={$date}&end_date={$date}"
+        );
+
+        $calendar->assertOk()
+            ->assertJsonPath('data.items.0.booking_scope', 'half_day')
+            ->assertJsonPath('data.items.0.end_time', '22:00')
+            ->assertJsonPath("data.table_occupancy.{$date}.0.reservations.0.guest_name", 'Event Guest')
+            ->assertJsonPath("data.table_occupancy.{$date}.0.reservations.0.party_size", 4)
+            ->assertJsonPath("data.table_occupancy.{$date}.0.reservations.0.event_type", 'Birthday')
+            ->assertJsonPath("data.table_occupancy.{$date}.0.reservations.0.booking_scope", 'half_day');
+    }
 }

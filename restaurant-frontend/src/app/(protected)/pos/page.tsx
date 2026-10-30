@@ -11,6 +11,7 @@ import {
   PaymentDialog,
   ReceiptDialog,
   ExistingOrderDialog,
+  PaymentMethodDisplay,
 } from "@/features/pos";
 import { useOrders, useOrder } from "@/lib/hooks";
 import { useAuth } from "@/providers/AuthProvider";
@@ -18,13 +19,24 @@ import { canAccessRevenueReport } from "@/lib/utils/permissions";
 import type { MenuItem, OrderType, Order } from "@/lib/types";
 import type { PaymentLine as PosPaymentLine, CartItemType } from "@/features/pos";
 import type { StatutoryDiscountType } from "@/features/pos/components/PaymentDialog";
-import type { PaymentFormData } from "@/lib/types";
+import type { PaymentFormData, OrderFormData, OrderItemFormData } from "@/lib/types";
 
 export default function PosPage() {
   const router = useRouter();
   const { user } = useAuth();
   const cart = usePosCart();
-  const { addPayment } = useOrders();
+  const { addPayment, create: createOrder, updateStatus } = useOrders();
+
+  const isWaiter = user?.role === "waiter";
+  const isCashier = user?.role === "cashier";
+  const isAdmin = user?.role === "admin" || user?.role === "manager";
+
+  // Waiters can create/serve orders
+  const canServe = isWaiter || isAdmin;
+  // Cashiers can bill out (create order) and process payments
+  const canBillOut = isCashier || isAdmin;
+  // Cashiers and admins can process payments
+  const canProcessPayments = isCashier || isAdmin;
 
   const [paymentOpen, setPaymentOpen] = useState(false);
   const [receiptOpen, setReceiptOpen] = useState(false);
@@ -210,6 +222,121 @@ export default function PosPage() {
     }
   }
 
+  // Waiter: Serve Order - Creates order and marks as served
+  async function handleServeOrder(
+    orderType: OrderType,
+    customerId?: string,
+    tableId?: string
+  ) {
+    if (!canServe) {
+      toast.error("You don't have permission to serve orders");
+      return;
+    }
+    if (cart.state.items.length === 0) {
+      toast.error("Cart is empty. Add items before serving.");
+      return;
+    }
+    if (orderType === "dine_in" && !tableId) {
+      toast.error("Select a table for dine-in orders");
+      return;
+    }
+
+    try {
+      const orderItems: OrderItemFormData[] = cart.state.items.map((item) => ({
+        menu_item_id: item.menu_item_id,
+        variant: item.variant,
+        quantity: item.quantity,
+        unit_price: item.price,
+        notes: item.notes,
+        modifiers: item.modifiers?.map((m) => ({
+          modifier_option_id: m.name, // This might need adjustment based on actual modifier structure
+          price: m.price,
+        })),
+      }));
+
+      const orderData: OrderFormData = {
+        order_type: orderType,
+        customer_id: customerId || undefined,
+        table_id: orderType === "dine_in" ? tableId : undefined,
+        items: orderItems,
+        notes: cart.state.notes,
+        auto_apply_promotions: true,
+      };
+
+      const result = await createOrder.mutateAsync(orderData);
+      const newOrder = result.data.data;
+
+      // Mark as served immediately
+      await updateStatus.mutateAsync({ id: newOrder.id, status: "served" });
+
+      toast.success(`Order ${newOrder.order_number} created and served`);
+      cart.clearCart();
+      resetCompletedTransaction();
+    } catch (error) {
+      const message =
+        (error as { response?: { data?: { message?: string } }; message?: string })?.response?.data?.message ||
+        (error as { message?: string })?.message ||
+        "Failed to serve order";
+      toast.error(message);
+    }
+  }
+
+  // Cashier: Bill Out - Creates order (pending) for later payment
+  async function handleBillOut(
+    orderType: OrderType,
+    customerId?: string,
+    tableId?: string
+  ) {
+    if (!canBillOut) {
+      toast.error("You don't have permission to bill out orders");
+      return;
+    }
+    if (cart.state.items.length === 0) {
+      toast.error("Cart is empty. Add items before billing out.");
+      return;
+    }
+    if (orderType === "dine_in" && !tableId) {
+      toast.error("Select a table for dine-in orders");
+      return;
+    }
+
+    try {
+      const orderItems: OrderItemFormData[] = cart.state.items.map((item) => ({
+        menu_item_id: item.menu_item_id,
+        variant: item.variant,
+        quantity: item.quantity,
+        unit_price: item.price,
+        notes: item.notes,
+        modifiers: item.modifiers?.map((m) => ({
+          modifier_option_id: m.name,
+          price: m.price,
+        })),
+      }));
+
+      const orderData: OrderFormData = {
+        order_type: orderType,
+        customer_id: customerId || undefined,
+        table_id: orderType === "dine_in" ? tableId : undefined,
+        items: orderItems,
+        notes: cart.state.notes,
+        auto_apply_promotions: true,
+      };
+
+      const result = await createOrder.mutateAsync(orderData);
+      const newOrder = result.data.data;
+
+      toast.success(`Order ${newOrder.order_number} billed out`);
+      cart.clearCart();
+      resetCompletedTransaction();
+    } catch (error) {
+      const message =
+        (error as { response?: { data?: { message?: string } }; message?: string })?.response?.data?.message ||
+        (error as { message?: string })?.message ||
+        "Failed to bill out order";
+      toast.error(message);
+    }
+  }
+
   function handleNewOrder() {
     cart.clearCart();
     resetCompletedTransaction();
@@ -306,23 +433,49 @@ export default function PosPage() {
             existingOrder={existingOrder}
             onSelectExistingOrder={() => setExistingDialogOpen(true)}
             onClearExistingOrder={() => setExistingOrderId(null)}
-            onPayExisting={() => setPaymentOpen(true)}
+            onPayExisting={canProcessPayments ? () => setPaymentOpen(true) : undefined}
+            onSelectTableOrder={(orderId) => {
+              setExistingOrderId(orderId);
+              setPaymentOpen(true);
+            }}
+            onAutoSelectTableOrder={
+              canProcessPayments
+                ? (orderId) => setExistingOrderId(orderId)
+                : undefined
+            }
+            onTableSelected={() => {
+              // When a table is selected, clear any currently selected existing order
+              // so the cashier can view fresh orders for that table
+              if (!canProcessPayments) setExistingOrderId(null);
+            }}
+            onServeOrder={canServe ? handleServeOrder : undefined}
+            onBillOut={canBillOut ? handleBillOut : undefined}
           />
+
+          {/* Payment method visibility for staff */}
+          <div className="p-3 border-t">
+            <PaymentMethodDisplay
+              title="Available Payments"
+              compact
+            />
+          </div>
         </div>
       </div>
 
-      <PaymentDialog
-        open={paymentOpen}
-        onOpenChange={setPaymentOpen}
-        totalAmount={dialogTotals.totalAmount}
-        discountAmount={dialogTotals.discountAmount}
-        vatAmount={dialogTotals.vatAmount}
-        serviceChargeAmount={dialogTotals.serviceChargeAmount}
-        subtotal={dialogTotals.subtotal}
-        onProcessPayment={handleProcessPayment}
-        isProcessing={addPayment.isPending}
-        existingOrder={existingOrder}
-      />
+      {canProcessPayments && (
+        <PaymentDialog
+          open={paymentOpen}
+          onOpenChange={setPaymentOpen}
+          totalAmount={dialogTotals.totalAmount}
+          discountAmount={dialogTotals.discountAmount}
+          vatAmount={dialogTotals.vatAmount}
+          serviceChargeAmount={dialogTotals.serviceChargeAmount}
+          subtotal={dialogTotals.subtotal}
+          onProcessPayment={handleProcessPayment}
+          isProcessing={addPayment.isPending}
+          existingOrder={existingOrder}
+        />
+      )}
 
       <ReceiptDialog
         open={receiptOpen}

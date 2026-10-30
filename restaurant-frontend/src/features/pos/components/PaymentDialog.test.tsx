@@ -6,6 +6,20 @@ import { PaymentDialog } from "./PaymentDialog";
 import type { PaymentLine } from "../types";
 import type { ReactNode } from "react";
 
+vi.mock("@/providers/AuthProvider", () => ({
+  useAuth: () => ({ user: { role: "cashier" } }),
+}));
+
+vi.mock("@/features/settings/hooks/useSettings", () => ({
+  useTaxRate: () => 12,
+  useActivePaymentMethods: () => ({
+    cash: true,
+    card: true,
+    e_wallet: true,
+    e_bank: false,
+  }),
+}));
+
 function renderWithProviders(ui: ReactNode) {
   const queryClient = new QueryClient({
     defaultOptions: {

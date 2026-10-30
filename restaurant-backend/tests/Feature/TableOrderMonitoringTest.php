@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Models\FloorPlan;
 use App\Models\MenuCategory;
 use App\Models\MenuItem;
+use App\Models\Customer;
 use App\Models\Order;
 use App\Models\OrderItem;
 use App\Models\Role;
@@ -148,12 +149,42 @@ class TableOrderMonitoringTest extends TestCase
         $this->assertSame('Main Floor', $row['floor_plan']['name']);
     }
 
-    private function createOrder(Table $table, string $status): Order
+    public function test_active_table_orders_include_customer_context(): void
+    {
+        $customer = Customer::create([
+            'name' => 'Order Customer',
+            'email' => 'order@example.com',
+            'phone' => '09179998888',
+            'customer_type' => 'registered',
+            'loyalty_points' => 0,
+            'total_spent' => 0,
+            'visit_count' => 0,
+            'is_active' => true,
+        ]);
+
+        $order = $this->createOrder($this->table, 'preparing', $customer->id);
+
+        $response = $this->actingAs($this->user)->getJson(
+            "/api/v1/orders?table_id={$this->table->id}&active=1"
+        );
+
+        $response->assertOk();
+        $row = collect($response->json('data.items'))->firstWhere('id', $order->id);
+
+        $this->assertSame($customer->id, $row['customer']['id']);
+        $this->assertSame('Order Customer', $row['customer']['name']);
+        $this->assertSame('09179998888', $row['customer']['phone']);
+        $this->assertSame('order@example.com', $row['customer']['email']);
+        $this->assertSame('registered', $row['customer']['customer_type']);
+    }
+
+    private function createOrder(Table $table, string $status, ?string $customerId = null): Order
     {
         return Order::create([
             'order_number' => 'ORD-'.uniqid(),
             'order_type' => 'dine_in',
             'table_id' => $table->id,
+            'customer_id' => $customerId,
             'status' => $status,
             'payment_status' => 'unpaid',
             'subtotal' => 100,

@@ -278,8 +278,16 @@ function stop() {
   killTree(web);
 }
 
-process.once("SIGINT", stop);
-process.once("SIGTERM", stop);
+// Child trees are killed synchronously above, so it is safe to exit right away.
+// Without this the supervisor lingers after Ctrl+C / a closed terminal, leaving
+// an orphan that holds no ports and makes the next launch confusing.
+function shutdown(exitCode = 0) {
+  stop();
+  process.exit(exitCode);
+}
+
+process.once("SIGINT", () => shutdown(0));
+process.once("SIGTERM", () => shutdown(0));
 // NOTE: the stdin-end watchdog is armed later, right before children spawn.
 // Arming it earlier made clean early exits assert-crash libuv on Windows.
 
@@ -329,8 +337,8 @@ const reuseLaravel = laravelPort.state === "healthy";
 // From here on we own child processes: arm the stdin watchdog so a closed
 // terminal window also shuts the children down.
 process.stdin.resume();
-process.stdin.once("end", stop);
-process.stdin.once("close", stop);
+process.stdin.once("end", () => shutdown(0));
+process.stdin.once("close", () => shutdown(0));
 
 if (reuseLaravel) {
   console.log(`${DIM}[dev] Laravel already running and healthy (PID ${laravelPort.pid}) - reusing it.${RESET_C}`);

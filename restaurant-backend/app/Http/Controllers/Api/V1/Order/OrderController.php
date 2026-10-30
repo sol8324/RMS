@@ -123,6 +123,11 @@ class OrderController extends Controller
                 'customer' => $o->customer ? [
                     'id' => $o->customer->id,
                     'name' => $o->customer->name,
+                    'phone' => $o->customer->phone,
+                    'email' => $o->customer->email,
+                    'customer_type' => $o->customer->customer_type,
+                    'notes' => $o->customer->notes,
+                    'dietary_restrictions' => $o->customer->dietary_restrictions,
                 ] : null,
                 'customer_name' => $o->customer?->name,
                 'table_number' => $o->table?->number,
@@ -437,6 +442,10 @@ return $this->success([
                 'id' => $order->customer->id,
                 'name' => $order->customer->name,
                 'phone' => $order->customer->phone,
+                'email' => $order->customer->email,
+                'customer_type' => $order->customer->customer_type,
+                'notes' => $order->customer->notes,
+                'dietary_restrictions' => $order->customer->dietary_restrictions,
             ] : null,
             // Flattened labels so consumers never fall back to showing the
             // raw customer/table UUID.

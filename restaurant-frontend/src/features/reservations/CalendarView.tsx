@@ -5,8 +5,8 @@ import { Calendar } from "@/components/ui/calendar";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Users, CalendarDays, CalendarClock, ChevronLeft, ChevronRight, Table as TableIcon, Circle, AlertCircle, Clock } from "lucide-react";
-import type { Reservation, TableOccupancy, TableOccupancyByDate } from "@/lib/types";
+import { Users, CalendarDays, CalendarClock, ChevronLeft, ChevronRight, Circle, AlertCircle, Clock } from "lucide-react";
+import type { BookingScope, Reservation, TableOccupancy, TableOccupancyByDate } from "@/lib/types";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import { sortTablesByNumber } from "@/lib/utils/tableSort";
@@ -52,12 +52,10 @@ function getTimeUntil(timeStr: string | undefined | null): string {
   return `${minutesUntil}m`;
 }
 
-const STATUS_DOT: Record<string, string> = {
-  pending: "bg-amber-500",
-  confirmed: "bg-blue-500",
-  seated: "bg-purple-500",
-  completed: "bg-emerald-500",
-  cancelled: "bg-red-500",
+const BOOKING_SCOPE_LABEL: Record<BookingScope, string> = {
+  standard: "Standard",
+  half_day: "Half-day",
+  whole_day: "Whole-day",
 };
 
 function getDateKey(date: Date): string {
@@ -192,20 +190,31 @@ export function CalendarView({
     ? sortTablesByNumber(tableOccupancy[selectedDateKey] ?? [])
     : [];
 
-  // Check if selected date has events
-  const hasEvent = selectedDateKey
-    ? (reservationsByDate[selectedDateKey]?.some((r) => r.event_type) ?? false)
-    : false;
-  
-  // Get event names for selected date
-  const eventNames = selectedDateKey
-    ? (reservationsByDate[selectedDateKey]?.filter((r) => r.event_type).map((r) => r.event_type) ?? [])
+  const selectedEventReservations = selectedDateKey
+    ? (reservationsByDate[selectedDateKey]?.filter(
+        (r) => (r.event_type || (r.booking_scope && r.booking_scope !== "standard"))
+          && r.status !== "cancelled"
+      ) ?? [])
     : [];
+
+  const hasEvent = selectedEventReservations.length > 0;
+
+  const wholeDayEvents = selectedEventReservations.filter(
+    (r) => r.booking_scope === "whole_day"
+  );
+  const hasWholeDayEvent = wholeDayEvents.length > 0;
 
   // Check if selected date is fully booked
   const isSelectedDateFull = selectedDateKey && tableOccupancy
     ? tableOccupancy[selectedDateKey]?.every((t) => t.has_reservation) ?? false
     : false;
+
+  // Only call the whole venue reserved when a whole-day event exists and
+  // every active table is actually occupied. A normal event does not block
+  // the other tables in the restaurant.
+  const isWholeVenueReserved = hasWholeDayEvent
+    && selectedDateTableOccupancy.length > 0
+    && selectedDateTableOccupancy.every((t) => t.has_reservation);
 
   const modifiers = {
     hasReservations: (date: Date) => {
@@ -214,7 +223,10 @@ export function CalendarView({
     },
     hasEvent: (date: Date) => {
       const key = getDateKey(date);
-      return (reservationsByDate[key]?.some((r) => r.event_type) ?? false);
+      return (reservationsByDate[key]?.some(
+        (r) => (r.event_type || (r.booking_scope && r.booking_scope !== "standard"))
+          && r.status !== "cancelled"
+      ) ?? false);
     },
     isFullDay: (date: Date) => {
       const key = getDateKey(date);
@@ -295,8 +307,13 @@ export function CalendarView({
               const isLimited = !isOutside && hasLimitedAvailability && !hasEvent && !isFullDay;
               const isAvailable = !isOutside && !isFullDay && !hasLimitedAvailability && !hasEvent;
 
-              // Get event names for this day
-              const eventNames = reservationsByDate[key]?.filter((r) => r.event_type).map((r) => r.event_type) ?? [];
+              const dayEvents = reservationsByDate[key]?.filter(
+                (r) => (r.event_type || (r.booking_scope && r.booking_scope !== "standard"))
+                  && r.status !== "cancelled"
+              ) ?? [];
+              const firstEventGuest = dayEvents[0]?.customer?.name
+                ?? dayEvents[0]?.guest_name
+                ?? dayEvents[0]?.event_type;
 
 return (
                 <button
@@ -343,11 +360,13 @@ return (
                         <span className="sm:hidden">{count}</span>
                       </span>
                     )}
-                    {isEventDay && eventNames.length > 0 && (
-                      <span className="inline-flex items-center gap-0.5 font-medium text-violet-600 dark:text-violet-400 flex-shrink-0 truncate" style={{ fontSize: s.badgeSize }}>
-                        <CalendarDays className={cn(s.iconSize)} />
-                        <span className="hidden sm:inline">{eventNames.join(", ")}</span>
-                        <span className="sm:hidden">{eventNames[0]}</span>
+                    {isEventDay && firstEventGuest && (
+                      <span className="inline-flex items-center gap-0.5 font-medium text-violet-600 dark:text-violet-400 flex-shrink-0 truncate max-w-full" style={{ fontSize: s.badgeSize }}>
+                        <CalendarDays className={cn("shrink-0", s.iconSize)} />
+                        <span className="truncate">{firstEventGuest}</span>
+                        {dayEvents.length > 1 && (
+                          <span className="shrink-0">+{dayEvents.length - 1}</span>
+                        )}
                       </span>
                     )}
                     {isFull && !isEventDay && (
@@ -439,8 +458,19 @@ return (
                   </div>
                 </div>
               )}
-              {/* Full day notice */}
-              {isSelectedDateFull && selectedDateTableOccupancy.length > 0 && (
+              {isWholeVenueReserved ? (
+                <div className="mb-4 p-3 bg-violet-50 dark:bg-violet-900/20 border border-violet-200 dark:border-violet-800 rounded-lg">
+                  <div className="flex items-center gap-2">
+                    <CalendarDays className="h-5 w-5 text-violet-600 dark:text-violet-400" />
+                    <div>
+                      <p className="font-medium text-violet-800 dark:text-violet-200">Whole-Day Event — Venue Reserved</p>
+                      <p className="text-sm text-violet-600 dark:text-violet-400">
+                        Every table is blocked by a whole-day event. Normal table bookings are unavailable for this date.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              ) : isSelectedDateFull ? (
                 <div className="mb-4 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
                   <div className="flex items-center gap-2">
                     <AlertCircle className="h-5 w-5 text-red-600 dark:text-red-400" />
@@ -452,25 +482,41 @@ return (
                     </div>
                   </div>
                 </div>
-              )}
-              {/* Event day notice - all tables reserved for event */}
-              {hasEvent && selectedDateTableOccupancy.length > 0 && (
+              ) : null}
+
+              {hasEvent && !isWholeVenueReserved && (
                 <div className="mb-4 p-3 bg-violet-50 dark:bg-violet-900/20 border border-violet-200 dark:border-violet-800 rounded-lg">
-                  <div className="flex items-center gap-2">
-                    <CalendarDays className="h-5 w-5 text-violet-600 dark:text-violet-400" />
-                    <div>
-                      <p className="font-medium text-violet-800 dark:text-violet-200">Event Day — Full Venue Reserved</p>
-                      <p className="text-sm text-violet-600 dark:text-violet-400">
-                        All tables are reserved for event: {eventNames.join(", ")}. No individual table reservations available.
-                      </p>
-                    </div>
+                  <p className="font-medium text-violet-800 dark:text-violet-200 flex items-center gap-2">
+                    <CalendarDays className="h-4 w-4" />
+                    Events on this date
+                  </p>
+                  <div className="mt-2 space-y-2">
+                    {selectedEventReservations.map((event) => (
+                      <div key={event.id} className="text-sm text-violet-700 dark:text-violet-300">
+                        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                          <span className="font-medium">
+                            {event.customer?.name ?? event.guest_name ?? "Guest"}
+                          </span>
+                          <span>{event.event_type ?? "Event"}</span>
+                          <span>
+                            {formatTime(event.reservation_time)}
+                            {event.end_time ? ` – ${formatTime(event.end_time)}` : ""}
+                          </span>
+                          <span>{event.party_size} guests</span>
+                          <span className="inline-flex items-center rounded-full border border-violet-300 bg-violet-100 px-2 py-0.5 text-[10px] font-medium text-violet-700 dark:border-violet-700 dark:bg-violet-900/40 dark:text-violet-300">
+                            {BOOKING_SCOPE_LABEL[event.booking_scope ?? "standard"]}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
                   </div>
+                  <p className="mt-2 text-xs text-violet-600 dark:text-violet-400">
+                    Other tables remain available unless listed as occupied below.
+                  </p>
                 </div>
               )}
               <div className="space-y-2 max-h-[300px] overflow-y-auto pr-1">
                     {selectedDateTableOccupancy.map((table: TableOccupancy) => {
-                      const isEventDay = hasEvent;
-                      // Find the next upcoming reservation for this table
                       const nextReservation = table.has_reservation && table.reservations.length > 0
                         ? table.reservations
                             .map((r) => ({
@@ -486,7 +532,7 @@ return (
                               return resTime >= now;
                             })
                         : null;
-                      
+
                       return (
                         <div
                           key={table.id}
@@ -496,7 +542,7 @@ return (
                             <span
                               className={cn(
                                 "h-3 w-3 rounded-full flex-shrink-0",
-                                isEventDay ? "bg-violet-500" : getTableStatusColor(table.status, table.has_reservation)
+                                getTableStatusColor(table.status, table.has_reservation)
                               )}
                             />
                             <div className="flex flex-col gap-0.5">
@@ -505,43 +551,53 @@ return (
                             </div>
                           </div>
                           <div className="flex-1 min-w-0 space-y-1.5">
-                            {isEventDay ? (
-                              <div className="flex items-center gap-2 px-2 py-1.5 rounded bg-violet-50 dark:bg-violet-900/20 border border-violet-200 dark:border-violet-800">
-                                <CalendarDays className="h-3.5 w-3.5 text-violet-600 dark:text-violet-400" />
-                                <span className="text-xs text-violet-700 dark:text-violet-300 font-medium">
-                                  Reserved for Event
-                                </span>
-                              </div>
-                            ) : table.has_reservation && table.reservations.length > 0 ? (
+                            {table.has_reservation && table.reservations.length > 0 ? (
                               <>
-                                {table.reservations.map((r: { reservation_time: string; status: string }, idx: number) => {
+                                {table.reservations.map((r, idx) => {
                                   const timeUntil = getTimeUntil(r.reservation_time);
                                   const isNext = nextReservation && nextReservation.reservation_time === r.reservation_time;
+                                  const scope = r.booking_scope ?? "standard";
                                   return (
                                     <div
-                                      key={idx}
+                                      key={r.id ?? `${r.reservation_time}-${idx}`}
                                       className={cn(
-                                        "flex items-center gap-2 px-2 py-1.5 rounded border transition-colors",
+                                        "flex items-start gap-2 px-2 py-1.5 rounded border transition-colors",
                                         isNext ? "bg-primary/5 border-primary/30" : "bg-muted/30 border-muted"
                                       )}
                                     >
-                                      <div className="flex items-center gap-1.5 flex-1 min-w-0">
-                                        <span className={cn("inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium shrink-0", getStatusColor(r.status))}>
-                                          {formatTime(r.reservation_time)}
-                                        </span>
-                                        {timeUntil && (
-                                          <span className={cn(
-                                            "text-[10px] font-mono shrink-0 px-1.5 py-0.5 rounded",
-                                            isNext ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground"
-                                          )}>
-                                            {timeUntil}
+                                      <div className="flex-1 min-w-0">
+                                        <div className="flex flex-wrap items-center gap-1.5">
+                                          <span className={cn("inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium shrink-0", getStatusColor(r.status))}>
+                                            {formatTime(r.reservation_time)}
+                                            {r.end_time ? ` – ${formatTime(r.end_time)}` : ""}
                                           </span>
-                                        )}
-                                        {isNext && (
-                                          <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-medium bg-primary/10 text-primary">
-                                            <Clock className="h-2.5 w-2.5" />
-                                            Next
-                                          </span>
+                                          {scope !== "standard" && (
+                                            <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-medium bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-300">
+                                              <CalendarDays className="h-2.5 w-2.5" />
+                                              {BOOKING_SCOPE_LABEL[scope]}
+                                            </span>
+                                          )}
+                                          {timeUntil && (
+                                            <span className={cn(
+                                              "text-[10px] font-mono shrink-0 px-1.5 py-0.5 rounded",
+                                              isNext ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground"
+                                            )}>
+                                              {timeUntil}
+                                            </span>
+                                          )}
+                                          {isNext && (
+                                            <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-medium bg-primary/10 text-primary">
+                                              <Clock className="h-2.5 w-2.5" />
+                                              Next
+                                            </span>
+                                          )}
+                                        </div>
+                                        {(r.guest_name || r.party_size || r.event_type) && (
+                                          <p className="mt-1 text-[11px] text-muted-foreground truncate">
+                                            {r.guest_name ?? "Guest"}
+                                            {r.party_size ? ` · ${r.party_size} guests` : ""}
+                                            {r.event_type ? ` · ${r.event_type}` : ""}
+                                          </p>
                                         )}
                                       </div>
                                       <span className={cn("text-[10px] font-medium capitalize shrink-0", getStatusColor(r.status))}>

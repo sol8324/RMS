@@ -142,3 +142,26 @@ npm run dev
 - **Gemini 3.x Flash** — insights/recommendations (`GEMINI_*` in backend `.env`)
 
 Keys live only in `restaurant-backend/.env` (gitignored).
+## Default Accounts
+
+| Role | Email | Password | Notes |
+|---|------|----------|-------|
+| Admin | admin@rms.com | Set via `ADMIN_PASSWORD` env or auto-generated on first seed | Full system access |
+| Manager | manager@rms.com | Set via `DEMO_USER_PASSWORD` env or `password` (CapstoneUatSeeder demo mode) | Restaurant manager |
+| Cashier | cashier@rms.com | Set via `DEMO_USER_PASSWORD` env or `password` (CapstoneUatSeeder demo mode) | POS and billing |
+| Waiter | waiter@rms.com | Set via `DEMO_USER_PASSWORD` env or `password` (CapstoneUatSeeder demo mode) | Order taking (POS enabled) |
+| Kitchen Staff | jaysonkitchenstaff@gmail.com | Set via `DEMO_USER_PASSWORD` env or auto-generated | Kitchen operations |
+| Inventory Staff | inventory@rms.com | Set via `DEMO_USER_PASSWORD` env or `password` (CapstoneUatSeeder demo mode) | Inventory management |
+
+*Notes:* Passwords depend on seeders used. `DatabaseSeeder`/`ProductionDataSeeder` may generate random passwords if env vars not set (check console output). `CapstoneUatSeeder` with `CAPSTONE_DEMO_MODE=true` creates all roles with defaults above.
+
+## System Audit and Data Corrections (Oct 30, 2026)
+
+- Completed a comprehensive system, database, and cross-module audit.
+- Added audit deliverables under `docs/`.
+- Corrected historical order totals, customer aggregates, reservation overlaps, status-history timestamps, inventory opening stock, and reservation end-time handling.
+- Fixed customer classification and analytics handling for `registered` customers.
+- Converted reservation `end_time` to a timestamp to represent overnight reservations.
+- Backend tests: 391 passed, 20 failed.
+- Frontend tests: 258 passed, 3 failed.
+- TypeScript strict check: passed.

@@ -19,6 +19,7 @@ Route::middleware(['auth:sanctum','active'])->group(function () {
         Route::get('/available', [TableController::class, 'available']);
         Route::get('/order-eligible', [TableController::class, 'orderEligible']);
         Route::post('/', [TableController::class, 'store'])->middleware('role:admin,manager,waiter');
+        Route::get('/{id}/schedule', [TableController::class, 'schedule'])->whereUuid('id');
         Route::get('/{id}', [TableController::class, 'show'])->whereUuid('id');
         Route::put('/{id}', [TableController::class, 'update'])->middleware('role:admin,manager')->whereUuid('id');
         Route::patch('/{id}/status', [TableController::class, 'updateStatus'])->middleware('role:admin,manager,waiter')->whereUuid('id');

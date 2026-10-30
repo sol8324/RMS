@@ -1005,6 +1005,9 @@ class ProductionDataSeeder extends Seeder
 
             $duration = $partySize <= 4 ? 180 : 240;
             $endTime = (new Carbon("{$resDate} {$hour}:{$minute}"))->addMinutes($duration)->format('H:i');
+            $bookingScope = $eventType === null
+                ? 'standard'
+                : ($duration >= 480 ? 'whole_day' : ($duration >= 240 ? 'half_day' : 'standard'));
             
             $requiresCard = $partySize >= 6 || in_array((new Carbon($resDate))->dayOfWeek, [5, 6]);
             $requiresDeposit = $partySize >= 6;
@@ -1030,6 +1033,7 @@ class ProductionDataSeeder extends Seeder
                 'special_requests' => $this->randomFrom([null, null, null, 'Allergic to shrimp', 'Prefer near window',
                     'Anniversary celebration', 'High chair needed', 'Birthday celebration', 'Corporate event']),
                 'event_type' => $eventType,
+                'booking_scope' => $bookingScope,
                 'card_required' => $requiresCard,
                 'deposit_required' => $requiresDeposit,
                 'deposit_amount' => $depositAmount,

@@ -37,6 +37,7 @@ import {
   useOrders,
 } from "@/lib/hooks";
 import { formatCurrency, cn } from "@/lib/utils";
+import { formatTableDisplay } from "@/lib/utils/orderDisplay";
 import { sortTablesByNumber } from "@/lib/utils/tableSort";
 import type { OrderType, Table } from "@/lib/types";
 
@@ -80,7 +81,13 @@ export function PosOrderScreen({ onOrderSent }: PosOrderScreenProps) {
   const [tableId, setTableId] = useState<string>("");
 
   const customerDisplay = customerId ? (customers.find((c) => c.id === customerId)?.name ?? "Unavailable customer") : null;
-  const tableDisplay = tableId ? (tables.find((t) => t.id === tableId) ? `${tables.find((t) => t.id === tableId)!.number} — ${tables.find((t) => t.id === tableId)!.capacity} seats` : "Unavailable table") : null;
+  const tableDisplay = tableId ? (() => {
+    const t = tables.find((tbl) => tbl.id === tableId);
+    if (!t) return "Unavailable table";
+    const formatted = formatTableDisplay(t);
+    if (formatted === "No Table") return `${t.number} — ${t.capacity} seats`;
+    return `${formatted} — ${t.capacity} seats`;
+  })() : null;
   const [notes, setNotes] = useState("");
   const [cart, setCart] = useState<CartLine[]>([]);
   const [mobileView, setMobileView] = useState<"menu" | "cart">("menu");
@@ -397,7 +404,7 @@ export function PosOrderScreen({ onOrderSent }: PosOrderScreenProps) {
                       <SelectItem value="none">No table</SelectItem>
                       {availableTables.map((t: Table) => (
                         <SelectItem key={t.id} value={t.id} className="truncate">
-                          {t.number}
+                          {formatTableDisplay(t) === "No Table" ? t.number : formatTableDisplay(t)}
                           {t.section ? ` · ${t.section}` : ""} — {t.capacity} seats
                           {t.seating ? " · Seated Reservation" : ""}
                         </SelectItem>

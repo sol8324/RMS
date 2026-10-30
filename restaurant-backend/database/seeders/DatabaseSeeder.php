@@ -22,6 +22,11 @@ class DatabaseSeeder extends Seeder
         $this->createAdminUser();
         $this->createRestaurantSettings();
         $this->call(ProductionDataSeeder::class);
+
+        if (app()->environment(['local', 'testing', 'development', 'dev'])) {
+            $this->call(RecentAnalyticsSeeder::class);
+        }
+
         $this->createAdminUser();
     }
 

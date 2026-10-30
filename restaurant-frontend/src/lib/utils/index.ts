@@ -32,6 +32,20 @@ export function formatLabel(value: string): string {
   return safeString(value).replace(/_/g, " ").replace(/\b\w/g, (l) => l.toUpperCase());
 }
 
+export type CustomerClassification = "VIP" | "Regular" | "Guest" | "Unclassified";
+
+export function customerClassification(
+  customer?: { customer_type?: string | null } | null,
+  hasProfile = Boolean(customer)
+): CustomerClassification {
+  if (!hasProfile) return "Guest";
+  const type = customer?.customer_type?.toLowerCase();
+  if (type === "vip") return "VIP";
+  if (type === "regular" || type === "registered") return "Regular";
+  if (type === "guest" || type === "walk_in") return "Guest";
+  return "Guest";
+}
+
 // Format an ISO datetime as its calendar date without timezone shift:
 // the backend stores date-only schedules as UTC midnights, and
 // new Date(iso).toLocaleDateString() renders the previous day in

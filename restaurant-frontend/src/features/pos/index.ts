@@ -8,6 +8,7 @@ export { DiscountDialog } from "./components/DiscountDialog";
 export { PaymentDialog } from "./components/PaymentDialog";
 export { ReceiptDialog } from "./components/ReceiptDialog";
 export { ExistingOrderDialog } from "./components/ExistingOrderDialog";
+export { PaymentMethodDisplay } from "./components/PaymentMethodDisplay";
 export { usePosCart } from "./hooks/usePosCart";
 export { formatCurrency } from "@/lib/utils";
 export type { CartItem as CartItemType, PosDiscount, PaymentLine, PosState, PosAction } from "./types";

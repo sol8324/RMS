@@ -11,7 +11,7 @@ class Table extends BaseModel
     protected $fillable = [
         'floor_plan_id', 'number', 'capacity', 'status', 'shape',
         'pos_x', 'pos_y', 'width', 'height', 'is_active',
-        'is_wheelchair_accessible',
+        'is_wheelchair_accessible', 'location', 'location_description',
     ];
 
     protected function casts(): array

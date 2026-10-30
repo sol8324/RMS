@@ -54,11 +54,17 @@ export interface RestaurantSettings {
   default_service_charge: number;
   service_charge_enabled: boolean;
   allow_negative_inventory: boolean;
+  reservation_turnover_buffer_minutes: number;
   order_prefix?: string;
   receipt_header?: string;
   receipt_footer?: string;
   opening_hours: OpeningHourRow[];
   updated_at?: string;
+  /** Payment method availability flags */
+  payment_cash_enabled: boolean;
+  payment_card_enabled: boolean;
+  payment_e_wallet_enabled: boolean;
+  payment_e_bank_enabled: boolean;
 }
 
 export function normalizeSettings(raw: unknown): RestaurantSettings {
@@ -85,11 +91,20 @@ export function normalizeSettings(raw: unknown): RestaurantSettings {
     vat_registered: Boolean(r.vat_registered),
     vat_inclusive: Boolean(r.vat_inclusive),
     allow_negative_inventory: Boolean(r.allow_negative_inventory),
+    reservation_turnover_buffer_minutes:
+      typeof r.reservation_turnover_buffer_minutes === "number"
+        ? r.reservation_turnover_buffer_minutes
+        : Number(r.reservation_turnover_buffer_minutes ?? 15),
     order_prefix: typeof r.order_prefix === "string" ? r.order_prefix : undefined,
     receipt_header: typeof r.receipt_header === "string" ? r.receipt_header : undefined,
     receipt_footer: typeof r.receipt_footer === "string" ? r.receipt_footer : undefined,
     opening_hours: normalizeHours((r.opening_hours as RawOpeningHours) ?? null),
     updated_at: typeof r.updated_at === "string" ? r.updated_at : undefined,
+    /** Payment method availability flags (default to true for backward compatibility) */
+    payment_cash_enabled: r.payment_cash_enabled !== false,
+    payment_card_enabled: r.payment_card_enabled !== false,
+    payment_e_wallet_enabled: r.payment_e_wallet_enabled !== false,
+    payment_e_bank_enabled: r.payment_e_bank_enabled !== false,
   };
 }
 
@@ -111,7 +126,13 @@ export interface SystemPreferencesFormData {
   default_tax_rate: number;
   default_service_charge: number;
   service_charge_enabled: boolean;
+  reservation_turnover_buffer_minutes: number;
   order_prefix: string;
   receipt_header: string;
   receipt_footer: string;
+  /** Payment method availability flags */
+  payment_cash_enabled: boolean;
+  payment_card_enabled: boolean;
+  payment_e_wallet_enabled: boolean;
+  payment_e_bank_enabled: boolean;
 }

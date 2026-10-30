@@ -19,6 +19,9 @@ Route::middleware(['auth:sanctum','active'])->group(function () {
         Route::delete('/{id}/archive', [ReservationController::class, 'unarchive'])->middleware('role:admin,manager');
         Route::post('/{id}/check-in', [ReservationController::class, 'checkIn'])->middleware('role:admin,manager,waiter');
         Route::post('/{id}/no-show', [ReservationController::class, 'processNoShow'])->middleware('role:admin,manager,waiter');
+        Route::post('/{id}/requests', [ReservationController::class, 'storeRequest'])->middleware('role:admin,manager,waiter');
+        Route::patch('/{id}/requests/{requestId}', [ReservationController::class, 'updateRequest'])->middleware('role:admin,manager,waiter');
+        Route::delete('/{id}/requests/{requestId}', [ReservationController::class, 'destroyRequest'])->middleware('role:admin,manager,waiter');
     });
 
     Route::prefix('waitlist')->middleware('role:admin,manager,waiter')->group(function () {

@@ -39,9 +39,14 @@ const formSchema = z.object({
   default_tax_rate: z.coerce.number().min(0).max(100),
   service_charge_enabled: z.boolean(),
   default_service_charge: z.coerce.number().min(0).max(100),
+  reservation_turnover_buffer_minutes: z.coerce.number().int().min(0).max(120),
   order_prefix: z.string().max(20),
   receipt_header: z.string().max(500),
   receipt_footer: z.string().max(500),
+  payment_cash_enabled: z.boolean(),
+  payment_card_enabled: z.boolean(),
+  payment_e_wallet_enabled: z.boolean(),
+  payment_e_bank_enabled: z.boolean(),
 });
 
 type FormValues = z.infer<typeof formSchema>;
@@ -61,9 +66,14 @@ export function SystemPreferences({ canEdit = false }: { canEdit?: boolean }) {
       default_tax_rate: 12,
       service_charge_enabled: false,
       default_service_charge: 0,
+      reservation_turnover_buffer_minutes: 15,
       order_prefix: "ORD-",
       receipt_header: "",
       receipt_footer: "",
+      payment_cash_enabled: true,
+      payment_card_enabled: true,
+      payment_e_wallet_enabled: true,
+      payment_e_bank_enabled: false,
     },
   });
 
@@ -79,15 +89,28 @@ export function SystemPreferences({ canEdit = false }: { canEdit?: boolean }) {
       default_tax_rate: settings.default_tax_rate,
       service_charge_enabled: settings.service_charge_enabled,
       default_service_charge: settings.default_service_charge,
+      reservation_turnover_buffer_minutes:
+        settings.reservation_turnover_buffer_minutes ?? 15,
       order_prefix: settings.order_prefix ?? "ORD-",
       receipt_header: settings.receipt_header ?? "",
       receipt_footer: settings.receipt_footer ?? "",
+      payment_cash_enabled: settings.payment_cash_enabled ?? true,
+      payment_card_enabled: settings.payment_card_enabled ?? true,
+      payment_e_wallet_enabled: settings.payment_e_wallet_enabled ?? true,
+      payment_e_bank_enabled: settings.payment_e_bank_enabled ?? false,
     });
   }, [settings, form]);
 
   if (isLoading) return <LoadingSpinner />;
 
   if (!canEdit && settings) {
+    const activeMethods = [
+      settings.payment_cash_enabled && "Cash",
+      settings.payment_card_enabled && "Card",
+      settings.payment_e_wallet_enabled && "E-Wallet",
+      settings.payment_e_bank_enabled && "E-Bank",
+    ].filter(Boolean).join(", ");
+
     return (
       <div className="space-y-6">
         <Card>
@@ -101,6 +124,22 @@ export function SystemPreferences({ canEdit = false }: { canEdit?: boolean }) {
             <p className="text-xs text-muted-foreground mt-3">
               Only Admins can edit billing settings.
             </p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader>
+            <CardTitle>Payment Methods</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2 text-sm">
+            <p><span className="text-muted-foreground">Active Methods:</span> {activeMethods || "None"}</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader>
+            <CardTitle>Reservations</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2 text-sm">
+            <p><span className="text-muted-foreground">Table turnover buffer:</span> {settings.reservation_turnover_buffer_minutes} minutes</p>
           </CardContent>
         </Card>
         <Card>
@@ -249,6 +288,92 @@ export function SystemPreferences({ canEdit = false }: { canEdit?: boolean }) {
                 )}
               />
             )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Payment Methods</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              Enable or disable payment methods available at checkout. 
+              Disabled methods will not appear in the POS for cashiers or waiters.
+            </p>
+            <div className="space-y-3">
+              <FormField
+                control={form.control}
+                name="payment_cash_enabled"
+                render={({ field }) => (
+                  <FormItem className="flex items-center gap-2">
+                    <FormControl>
+                      <Checkbox checked={field.value} onCheckedChange={field.onChange} />
+                    </FormControl>
+                    <FormLabel className="!mt-0">Cash</FormLabel>
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="payment_card_enabled"
+                render={({ field }) => (
+                  <FormItem className="flex items-center gap-2">
+                    <FormControl>
+                      <Checkbox checked={field.value} onCheckedChange={field.onChange} />
+                    </FormControl>
+                    <FormLabel className="!mt-0">Card (Credit/Debit)</FormLabel>
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="payment_e_wallet_enabled"
+                render={({ field }) => (
+                  <FormItem className="flex items-center gap-2">
+                    <FormControl>
+                      <Checkbox checked={field.value} onCheckedChange={field.onChange} />
+                    </FormControl>
+                    <FormLabel className="!mt-0">E-Wallet (GCash, Maya, GrabPay)</FormLabel>
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="payment_e_bank_enabled"
+                render={({ field }) => (
+                  <FormItem className="flex items-center gap-2">
+                    <FormControl>
+                      <Checkbox checked={field.value} onCheckedChange={field.onChange} />
+                    </FormControl>
+                    <FormLabel className="!mt-0">E-Bank / Bank Transfer</FormLabel>
+                  </FormItem>
+                )}
+              />
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Reservations</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <FormField
+              control={form.control}
+              name="reservation_turnover_buffer_minutes"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Table Turnover Buffer (minutes)</FormLabel>
+                  <FormControl>
+                    <Input type="number" min={0} max={120} {...field} />
+                  </FormControl>
+                  <p className="text-xs text-muted-foreground">
+                    Time reserved after a booking ends before the same table can be booked again.
+                  </p>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
           </CardContent>
         </Card>
 

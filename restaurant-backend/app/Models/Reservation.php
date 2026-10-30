@@ -12,7 +12,7 @@ class Reservation extends BaseModel
         'customer_id', 'table_id', 'reservation_number', 'guest_name',
         'guest_phone', 'guest_email', 'party_size', 'reservation_date',
         'reservation_time', 'status', 'source', 'special_requests',
-        'event_type', 'card_required', 'deposit_required', 'deposit_amount',
+        'event_type', 'booking_scope', 'card_required', 'deposit_required', 'deposit_amount',
         'deposit_paid', 'card_on_file', 'reserved_party_size', 'actual_party_size',
         'duration_minutes', 'end_time', 'reminder_24h_sent', 'reminder_2h_sent',
         'cancellation_reason', 'no_show_counter', 'partial_show_counter', 'guest_flag_level', 'archived_at',
@@ -54,6 +54,11 @@ class Reservation extends BaseModel
     public function table()
     {
         return $this->belongsTo(Table::class);
+    }
+
+    public function requests()
+    {
+        return $this->hasMany(ReservationRequest::class);
     }
 
     /**

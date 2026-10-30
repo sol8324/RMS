@@ -18,9 +18,10 @@ import {
   Archive,
   ArchiveRestore,
   Users,
+  Clock,
 } from "lucide-react";
 import type { Table as TableType, TableStatus } from "@/lib/types";
-import { cn, formatLabel } from "@/lib/utils";
+import { cn, formatLabel, formatTime } from "@/lib/utils";
 import { sortTablesByNumber } from "@/lib/utils/tableSort";
 
 const STATUS_GLOW: Record<TableStatus, string> = {
@@ -72,7 +73,7 @@ export function TableGridView({
   const sorted = sortTablesByNumber(tables);
 
   return (
-    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
+    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-2.5">
       {sorted.map((table) => {
         const isArchived = table.is_active === false;
         return (
@@ -80,7 +81,7 @@ export function TableGridView({
           key={table.id}
           data-archived={isArchived || undefined}
           className={cn(
-            "relative rounded-xl border-2 p-3 transition-all min-h-[120px] flex flex-col",
+            "relative rounded-lg border p-2.5 transition-all min-h-[100px] flex flex-col shadow-sm hover:shadow-md",
             isArchived
               ? "border-dashed border-muted-foreground/40 opacity-80"
               : STATUS_GLOW[table.status]
@@ -180,6 +181,18 @@ export function TableGridView({
                 {table.name}
               </span>
             )}
+            {!isArchived && table.next_reservation && (
+              <span
+                className="mt-1 inline-flex max-w-full items-center gap-1 truncate rounded-full bg-blue-50 px-1.5 py-0.5 text-[9px] font-medium text-blue-700 dark:bg-blue-900/20 dark:text-blue-300"
+                title={`Next: ${table.next_reservation.guest_name} at ${formatTime(table.next_reservation.reservation_time)}`}
+              >
+                <Clock className="h-2.5 w-2.5 shrink-0" />
+                <span className="truncate">
+                  {formatTime(table.next_reservation.reservation_time)} |{" "}
+                  {table.next_reservation.guest_name}
+                </span>
+              </span>
+            )}
           </div>
 
           <div className="pointer-events-none relative z-10 flex items-center justify-between mt-2 pt-2 border-t border-current/10">
@@ -187,6 +200,11 @@ export function TableGridView({
               <Users className="h-3 w-3" />
               {table.capacity}
             </div>
+            {table.location && (
+              <div className="mt-1 flex items-center gap-1 text-[10px] text-gray-500 dark:text-gray-400 truncate" title={table.location_description || table.location}>
+                <span className="truncate">{table.location}</span>
+              </div>
+            )}
             {isArchived ? (
               <StatusBadge status="inactive" label="Archived" className="text-[9px] px-1 py-0 h-4" title={`Underlying status: ${formatLabel(table.status)}`} />
             ) : (

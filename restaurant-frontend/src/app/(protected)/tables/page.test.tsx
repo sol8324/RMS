@@ -5,10 +5,16 @@ import { describe, expect, it, vi, beforeEach } from "vitest";
 import TablesPage from "./page";
 import type { Table } from "@/lib/types";
 
-const { mockUseAuth, mockUseTables, mockUseTableActiveOrders } = vi.hoisted(() => ({
+const {
+  mockUseAuth,
+  mockUseTables,
+  mockUseTableActiveOrders,
+  mockUseTableSchedule,
+} = vi.hoisted(() => ({
   mockUseAuth: vi.fn(),
   mockUseTables: vi.fn(),
   mockUseTableActiveOrders: vi.fn(),
+  mockUseTableSchedule: vi.fn(),
 }));
 
 vi.mock("@/providers/AuthProvider", () => ({
@@ -18,6 +24,7 @@ vi.mock("@/providers/AuthProvider", () => ({
 vi.mock("@/lib/hooks", () => ({
   useTables: mockUseTables,
   useTableActiveOrders: mockUseTableActiveOrders,
+  useTableSchedule: mockUseTableSchedule,
 }));
 
 function makeTable(): Table {
@@ -62,6 +69,21 @@ function mockTablesState() {
     isError: false,
     isFetching: false,
     dataUpdatedAt: Date.now(),
+    refetch: vi.fn(),
+  });
+  mockUseTableSchedule.mockReturnValue({
+    data: {
+      table: makeTable(),
+      date: "2026-10-27",
+      days: 7,
+      buffer_minutes: 15,
+      next_reservation: null,
+      reservations: [],
+      slots: [],
+    },
+    isLoading: false,
+    isError: false,
+    isFetching: false,
     refetch: vi.fn(),
   });
 }

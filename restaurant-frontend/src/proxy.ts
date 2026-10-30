@@ -54,10 +54,9 @@ const ROLE_GUARDS: Record<string, string[] | "any"> = {
   "/kitchen": ["admin", "manager", "kitchen_staff", "waiter"],
 
   // Front-of-house: POS, orders, tables, reservations, customers, dashboard.
-  // - POS excludes waiter: the payment endpoint is role:admin,manager,cashier,
-  //   so a waiter could build a cart but never complete payment.
+  // - POS: waiters can take orders (payments remain cashier/admin/manager only).
   // - Reservations excludes cashier: backend reads are role:admin,manager,waiter.
-  "/pos": ["admin", "manager", "cashier"],
+  "/pos": ["admin", "manager", "cashier", "waiter"],
   "/orders": ["admin", "manager", "cashier", "waiter", "kitchen_staff"],
   "/tables": ["admin", "manager", "cashier", "waiter"],
   "/reservations": ["admin", "manager", "waiter"],

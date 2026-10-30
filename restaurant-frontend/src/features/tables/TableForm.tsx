@@ -29,6 +29,8 @@ export function TableForm({
     number: initialData?.number ?? "",
     capacity: initialData?.capacity ?? 4,
     shape: initialData?.shape ?? "rectangle",
+    location: initialData?.location ?? "",
+    location_description: initialData?.location_description ?? "",
   });
 
   const [errors, setErrors] = useState<FormErrors>({});
@@ -127,6 +129,41 @@ export function TableForm({
             <option value="square">Square</option>
           </select>
         </div>
+      </div>
+
+      <div className="space-y-2">
+        <Label htmlFor="location">Table Location</Label>
+        <select id="location" value={formData.location ?? ''} onChange={(e) => setFormData((prev) => ({ ...prev, location: e.target.value }))} className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm">
+          <option value="">Select location</option>
+          <option value="Near the window">Near the window</option>
+          <option value="Center or middle area">Center or middle area</option>
+          <option value="Near the entrance or exit">Near the entrance or exit</option>
+          <option value="Near the kitchen">Near the kitchen</option>
+          <option value="Near the cashier">Near the cashier</option>
+          <option value="Private area">Private area</option>
+          <option value="Outdoor">Outdoor</option>
+          <option value="Other">Other</option>
+        </select>
+      </div>
+
+      <div className="space-y-2">
+        <Label htmlFor="location_description">Location Description</Label>
+        <textarea
+          id="location_description"
+          value={formData.location_description ?? ""}
+          onChange={(e) =>
+            setFormData((prev) => ({
+              ...prev,
+              location_description: e.target.value,
+            }))
+          }
+          maxLength={500}
+          placeholder="Additional details (optional)"
+          className="min-h-20 w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm"
+        />
+        <p className="text-xs text-muted-foreground">
+          {(formData.location_description ?? "").length}/500 characters
+        </p>
       </div>
 
       <div className="flex justify-end gap-2 pt-2">

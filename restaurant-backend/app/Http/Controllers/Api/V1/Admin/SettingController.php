@@ -66,6 +66,7 @@ class SettingController extends Controller
                 'auto_cancel_timeout' => $settings->auto_cancel_timeout,
                 'allow_negative_inventory' => $settings->allow_negative_inventory,
                 'low_stock_threshold' => $settings->low_stock_threshold,
+                'reservation_turnover_buffer_minutes' => (int) ($settings->reservation_turnover_buffer_minutes ?? 15),
                 'created_at' => $settings->created_at?->toISOString(),
                 'updated_at' => $settings->updated_at?->toISOString(),
             ],
@@ -112,6 +113,7 @@ class SettingController extends Controller
             'auto_cancel_timeout' => 'nullable|integer|min:1',
             'allow_negative_inventory' => 'sometimes|boolean',
             'low_stock_threshold' => 'nullable|integer|min:0',
+            'reservation_turnover_buffer_minutes' => 'nullable|integer|min:0|max:120',
         ]);
 
         $settings = RestaurantSetting::first();
@@ -163,6 +165,7 @@ class SettingController extends Controller
                 'auto_cancel_timeout' => $settings->auto_cancel_timeout,
                 'allow_negative_inventory' => $settings->allow_negative_inventory,
                 'low_stock_threshold' => $settings->low_stock_threshold,
+                'reservation_turnover_buffer_minutes' => (int) ($settings->reservation_turnover_buffer_minutes ?? 15),
                 'created_at' => $settings->created_at?->toISOString(),
                 'updated_at' => $settings->updated_at?->toISOString(),
             ],

@@ -13,6 +13,46 @@ export type EventType =
   | "Rehearsal Dinner"
   | "Other";
 
+export type BookingScope = "standard" | "half_day" | "whole_day";
+
+export type ReservationRequestCategory =
+  | "seating"
+  | "accessibility"
+  | "dietary"
+  | "occasion"
+  | "other";
+
+export type ReservationRequestStatus =
+  | "pending"
+  | "acknowledged"
+  | "in_progress"
+  | "completed"
+  | "cancelled";
+
+export interface ReservationRequest {
+  id?: string;
+  category: ReservationRequestCategory;
+  label: string;
+  value?: string | null;
+  details?: string | null;
+  status?: ReservationRequestStatus;
+  priority?: "normal" | "high";
+  is_matched?: boolean | null;
+  acknowledged_by?: string | null;
+  acknowledged_at?: string | null;
+  completed_by?: string | null;
+  completed_at?: string | null;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface ReservationAssignment {
+  matched_requests: ReservationRequest[];
+  unmet_requests: ReservationRequest[];
+  score: number | null;
+  buffer_minutes: number | null;
+}
+
 export interface TableOccupancy {
   id: string;
   number: string;
@@ -20,8 +60,15 @@ export interface TableOccupancy {
   status: string;
   has_reservation: boolean;
   reservations: Array<{
+    id?: string;
+    guest_name?: string | null;
+    party_size?: number;
     reservation_time: string;
+    end_time?: string;
+    duration_minutes?: number;
     status: string;
+    event_type?: EventType | null;
+    booking_scope?: BookingScope;
   }>;
 }
 
@@ -37,6 +84,7 @@ export interface ReservationPolicy {
   cancellation_window_minutes: number;
   regular_duration_minutes: number;
   large_duration_minutes: number;
+  reservation_turnover_buffer_minutes?: number;
   weekend_days: number[];
 }
 
@@ -46,7 +94,12 @@ export interface AvailabilityCheckResult {
     id: string;
     number: string;
     capacity: number;
+    shape?: string;
+    location?: string | null;
+    location_description?: string | null;
+    is_wheelchair_accessible?: boolean;
   } | null;
+  assignment?: ReservationAssignment | null;
   duration_minutes: number;
   end_time: string;
   requires_card: boolean;
@@ -55,6 +108,7 @@ export interface AvailabilityCheckResult {
   policy: {
     card_threshold: number;
     weekend_days: number[];
+    turnover_buffer_minutes?: number;
   };
 }
 
@@ -91,7 +145,7 @@ export interface TimeSlotsResult {
 export interface Reservation {
   id: string;
   customer_id?: string;
-  customer?: Customer | null;
+  customer?: (Customer & { customer_type?: string }) | null;
   table_id?: string;
   table?: ReservationTable | null;
   guest_name?: string;
@@ -108,7 +162,12 @@ export interface Reservation {
   actual_party_size?: number;
   status: ReservationStatus;
   special_requests?: string;
+  requests?: ReservationRequest[];
+  requests_count?: number;
+  unmet_requests_count?: number;
+  assignment?: ReservationAssignment | null;
   event_type?: EventType | null;
+  booking_scope?: BookingScope;
   card_required?: boolean;
   deposit_required?: boolean;
   deposit_amount?: number;
@@ -143,7 +202,9 @@ export interface ReservationFormData {
   party_size: number;
   source?: string;
   special_requests?: string;
+  requests?: ReservationRequest[];
   event_type?: EventType;
+  booking_scope?: BookingScope;
   status?: ReservationStatus;
   card_on_file?: boolean;
   deposit_paid?: boolean;

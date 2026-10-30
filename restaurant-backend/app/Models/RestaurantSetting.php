@@ -48,6 +48,7 @@ class RestaurantSetting extends BaseModel
         'reservation_cancellation_window_minutes',
         'reservation_regular_duration_minutes',
         'reservation_large_duration_minutes',
+        'reservation_turnover_buffer_minutes',
         'reservation_weekend_days',
     ];
 
@@ -67,6 +68,7 @@ class RestaurantSetting extends BaseModel
         'reservation_cancellation_window_minutes' => 'integer',
         'reservation_regular_duration_minutes' => 'integer',
         'reservation_large_duration_minutes' => 'integer',
+        'reservation_turnover_buffer_minutes' => 'integer',
         'reservation_weekend_days' => 'array',
     ];
 

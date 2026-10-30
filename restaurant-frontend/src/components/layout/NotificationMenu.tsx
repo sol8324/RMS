@@ -10,7 +10,16 @@ import {
   DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
-import { Bell, ShoppingCart, CreditCard, TriangleAlert, Info } from "lucide-react";
+import {
+  Bell,
+  CalendarDays,
+  CreditCard,
+  Info,
+  MessageSquare,
+  ShoppingCart,
+  TriangleAlert,
+  Utensils,
+} from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { cn } from "@/lib/utils";
 import { useNotifications } from "@/lib/hooks";
@@ -21,6 +30,9 @@ const ICON_MAP: Record<NotificationIcon, React.ComponentType<{ className?: strin
   payment: CreditCard,
   warning: TriangleAlert,
   info: Info,
+  calendar: CalendarDays,
+  request: MessageSquare,
+  table: Utensils,
 };
 
 function formatRelativeTime(isoTime: string): string {

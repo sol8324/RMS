@@ -2,13 +2,19 @@ export type NotificationType =
   | "order"
   | "payment"
   | "warning"
-  | "info";
+  | "info"
+  | "reservation"
+  | "request"
+  | "table";
 
 export type NotificationIcon =
   | "order"
   | "payment"
   | "warning"
-  | "info";
+  | "info"
+  | "calendar"
+  | "request"
+  | "table";
 
 export interface NotificationAction {
   label: string;
